@@ -4,6 +4,32 @@
 
 `C:\Users\Grigoriy\telegram_tic_tac_toe_bot`
 
+## Current deployed URLs
+
+- GitHub repository: `https://github.com/Valsirom/telegram-tic-tac-toe`
+- GitHub Pages Mini App: `https://valsirom.github.io/telegram-tic-tac-toe/`
+- Render backend/API: `https://telegram-tic-tac-toe-ipoc.onrender.com`
+- Render health check: `https://telegram-tic-tac-toe-ipoc.onrender.com/health`
+- Render diagnostics: `https://telegram-tic-tac-toe-ipoc.onrender.com/api/diagnostics`
+
+## Current deployment status
+
+Deployment is working with:
+
+- Render Free for Python backend, webhook and API
+- GitHub Pages for Telegram Mini App from `docs/`
+- Supabase for shared statistics in `public.user_stats`
+
+Important troubleshooting already resolved:
+
+- `SUPABASE_URL` on Render must be only the base project URL:
+  - correct: `https://PROJECT_ID.supabase.co`
+  - wrong: `https://PROJECT_ID.supabase.co/rest/v1`
+- When `SUPABASE_URL` was wrong, diagnostics returned:
+  - `PGRST125`
+  - `Invalid path specified in request URL`
+- After fixing `SUPABASE_URL`, Supabase statistics synchronization works.
+
 ## How to run
 
 PowerShell:
