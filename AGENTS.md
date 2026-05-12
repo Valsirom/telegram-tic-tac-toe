@@ -51,6 +51,8 @@ The main dependency is `python-telegram-bot`.
 - `bot.py` — main Telegram bot code
 - `webapp/index.html` — Telegram Mini App frontend
 - `webapp/config.js` — Mini App API URL config for GitHub Pages
+- `docs/index.html` — GitHub Pages copy of Mini App
+- `docs/config.js` — GitHub Pages copy of Mini App config
 - `requirements.txt` — Python dependencies
 - `Procfile` — Koyeb/Procfile web start command
 - `runtime.txt` — Python runtime hint
@@ -100,7 +102,7 @@ The main dependency is `python-telegram-bot`.
   - Koyeb runs `uvicorn bot:app --host 0.0.0.0 --port $PORT`
   - Koyeb serves Telegram webhook at `/webhook`
   - Koyeb serves stats API at `/api/stats/{user_id}`
-  - GitHub Pages serves the Mini App from `webapp/`
+  - GitHub Pages serves the Mini App from `docs/`
   - Supabase stores shared stats in `public.user_stats`
 
 ## Notes

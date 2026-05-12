@@ -32,6 +32,9 @@ Create a GitHub repository for this project and upload files:
 - `webapp/index.html`
 - `webapp/config.js`
 - `webapp/config.example.js`
+- `docs/index.html`
+- `docs/config.js`
+- `docs/config.example.js`
 - `AGENTS.md`
 - `DEPLOY.md`
 
@@ -52,7 +55,7 @@ window.TIC_TAC_TOE_CONFIG = {
 4. Open repository **Settings → Pages**.
 5. Choose deploy from branch.
 6. Select the branch, for example `main`.
-7. Select folder `/webapp` if available. If GitHub does not offer `/webapp`, move Mini App files to a separate repository root or use GitHub Actions.
+7. Select folder `/docs`.
 8. Wait until GitHub gives you an HTTPS URL.
 
 The Mini App URL will look like:
