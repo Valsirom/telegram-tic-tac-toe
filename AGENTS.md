@@ -58,6 +58,7 @@ The main dependency is `python-telegram-bot`.
 - `runtime.txt` — Python runtime hint
 - `supabase_schema.sql` — Supabase table setup
 - `DEPLOY.md` — detailed deploy guide for Koyeb + GitHub Pages + Supabase
+- `DEPLOY_RENDER.md` — detailed deploy guide for Render Free + GitHub Pages + Supabase
 - `stats.json` — persistent user statistics
 - `AGENTS.md` — project memory/instructions for future assistant sessions
 
@@ -99,9 +100,10 @@ The main dependency is `python-telegram-bot`.
     - game with friend (`pvp`)
   - old flat stats format is migrated automatically into the bot stats section
 - Deployment architecture:
-  - Koyeb runs `uvicorn bot:app --host 0.0.0.0 --port $PORT`
-  - Koyeb serves Telegram webhook at `/webhook`
-  - Koyeb serves stats API at `/api/stats/{user_id}`
+  - Render Free can run `uvicorn bot:app --host 0.0.0.0 --port $PORT`
+  - Koyeb can also run the same command if available
+  - backend serves Telegram webhook at `/webhook`
+  - backend serves stats API at `/api/stats/{user_id}`
   - GitHub Pages serves the Mini App from `docs/`
   - Supabase stores shared stats in `public.user_stats`
 
