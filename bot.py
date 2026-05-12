@@ -159,6 +159,10 @@ def supabase_headers() -> dict[str, str]:
     }
 
 
+def log_supabase_error(action: str, error: Exception) -> None:
+    print(f"Supabase {action} failed: {type(error).__name__}: {error}", flush=True)
+
+
 def local_add_user_result(user_id: int, mode: str, result: str) -> None:
     user_stats = get_user_stats(user_id)[mode]
     user_stats["games"] += 1
@@ -202,22 +206,29 @@ async def async_add_user_result(user_id: int, mode: str, result: str) -> None:
         local_add_user_result(user_id, mode, result)
         return
 
-    user_stats = await supabase_get_stats(user_id)
+    try:
+        user_stats = await supabase_get_stats(user_id)
 
-    if user_stats is None:
-        user_stats = {"bot": empty_stats(), "pvp": empty_stats()}
+        if user_stats is None:
+            user_stats = {"bot": empty_stats(), "pvp": empty_stats()}
 
-    user_stats.setdefault(mode, empty_stats())
-    user_stats[mode]["games"] += 1
-    user_stats[mode][result] += 1
-    await supabase_set_stats(user_id, user_stats)
+        user_stats.setdefault(mode, empty_stats())
+        user_stats[mode]["games"] += 1
+        user_stats[mode][result] += 1
+        await supabase_set_stats(user_id, user_stats)
+    except Exception as error:
+        log_supabase_error("write", error)
+        local_add_user_result(user_id, mode, result)
 
 
 async def get_stats_for_api(user_id: int) -> dict[str, dict[str, int]]:
     if supabase_configured():
-        user_stats = await supabase_get_stats(user_id)
-        if user_stats is not None:
-            return user_stats
+        try:
+            user_stats = await supabase_get_stats(user_id)
+            if user_stats is not None:
+                return user_stats
+        except Exception as error:
+            log_supabase_error("read", error)
 
     return get_user_stats(user_id)
 
@@ -809,6 +820,45 @@ async def root() -> FileResponse:
 @app.get("/health")
 async def health() -> dict[str, bool]:
     return {"ok": True}
+
+
+@app.get("/api/diagnostics")
+async def diagnostics() -> dict:
+    result = {
+        "supabase_url_set": bool(os.getenv(SUPABASE_URL_ENV_NAME)),
+        "supabase_service_role_key_set": bool(os.getenv(SUPABASE_SERVICE_ROLE_KEY_ENV_NAME)),
+        "supabase_anon_key_set": bool(os.getenv(SUPABASE_ANON_KEY_ENV_NAME)),
+        "telegram_webhook_url_set": bool(os.getenv(WEBHOOK_URL_ENV_NAME)),
+        "telegram_webapp_url_set": bool(os.getenv(WEBAPP_URL_ENV_NAME)),
+        "supabase_check": None,
+    }
+
+    if not supabase_configured():
+        result["supabase_check"] = {"ok": False, "error": "Supabase is not configured"}
+        return result
+
+    try:
+        url = f"{os.getenv(SUPABASE_URL_ENV_NAME).rstrip('/')}/rest/v1/user_stats"
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(
+                url,
+                headers=supabase_headers(),
+                params={"select": "user_id", "limit": "1"},
+            )
+
+        result["supabase_check"] = {
+            "ok": response.is_success,
+            "status_code": response.status_code,
+            "body_preview": response.text[:300] if not response.is_success else "",
+        }
+    except Exception as error:
+        result["supabase_check"] = {
+            "ok": False,
+            "error_type": type(error).__name__,
+            "error": str(error),
+        }
+
+    return result
 
 
 @app.post("/webhook")
