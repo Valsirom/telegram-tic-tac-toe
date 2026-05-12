@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Крестики-нолики</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="./config.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111827;
+      --card: #1f2937;
+      --text: #f9fafb;
+      --muted: #9ca3af;
+      --button: #2563eb;
+      --button-text: #ffffff;
+      --cell: #374151;
+      --cell-hover: #4b5563;
+      --border: #4b5563;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--tg-theme-bg-color, var(--bg));
+      color: var(--tg-theme-text-color, var(--text));
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+    }
+
+    .app {
+      width: min(100%, 440px);
+      background: var(--tg-theme-secondary-bg-color, var(--card));
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 22px;
+      box-shadow: 0 18px 40px rgb(0 0 0 / 0.28);
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      text-align: center;
+      font-size: 28px;
+    }
+
+    .subtitle {
+      margin: 0 0 18px;
+      color: var(--tg-theme-hint-color, var(--muted));
+      text-align: center;
+      line-height: 1.35;
+    }
+
+    .modes,
+    .sides {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .modes {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .sides {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+    button {
+      border: 0;
+      border-radius: 14px;
+      padding: 12px 10px;
+      background: var(--tg-theme-button-color, var(--button));
+      color: var(--tg-theme-button-text-color, var(--button-text));
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      background: var(--cell);
+      color: var(--text);
+    }
+
+    button.active {
+      outline: 3px solid var(--tg-theme-link-color, #60a5fa);
+      outline-offset: 2px;
+    }
+
+    button:active {
+      transform: scale(0.98);
+    }
+
+    .status {
+      min-height: 50px;
+      margin: 12px 0 16px;
+      padding: 12px;
+      border-radius: 16px;
+      background: rgb(255 255 255 / 0.06);
+      text-align: center;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    .board {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .cell {
+      aspect-ratio: 1;
+      border-radius: 18px;
+      background: var(--cell);
+      color: var(--text);
+      font-size: clamp(34px, 14vw, 58px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .cell:hover {
+      background: var(--cell-hover);
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .stats {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 16px;
+      background: rgb(255 255 255 / 0.06);
+      color: var(--tg-theme-hint-color, var(--muted));
+      line-height: 1.45;
+      white-space: pre-line;
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <h1>Крестики-нолики</h1>
+    <p class="subtitle">Telegram Mini App. Играйте с ботом или с другом прямо внутри Telegram.</p>
+
+    <div class="modes">
+      <button type="button" data-mode="bot">С ботом</button>
+      <button type="button" data-mode="pvp">С другом</button>
+    </div>
+
+    <div id="sidePicker" class="sides">
+      <button type="button" data-side="X">Играть за ❎</button>
+      <button type="button" data-side="O">Играть за ⭕</button>
+      <button type="button" data-side="random">Случайно</button>
+    </div>
+
+    <div id="status" class="status"></div>
+
+    <div id="board" class="board"></div>
+
+    <div class="actions">
+      <button id="newGame" type="button">Новая игра</button>
+      <button id="closeApp" class="secondary" type="button">Закрыть</button>
+    </div>
+
+    <div id="stats" class="stats"></div>
+  </main>
+
+  <script>
+    const tg = window.Telegram?.WebApp;
+    const empty = "·";
+    const emoji = { X: "❎", O: "⭕" };
+    const mistakeChance = 0.30;
+    const botMoveDelay = 800;
+    const apiBaseUrl = (window.TIC_TAC_TOE_CONFIG?.API_BASE_URL || "").replace(/\/$/, "");
+    const winLines = [
+      [0, 1, 2],
+      [3, 4, 5],
+      [6, 7, 8],
+      [0, 3, 6],
+      [1, 4, 7],
+      [2, 5, 8],
+      [0, 4, 8],
+      [2, 4, 6],
+    ];
+
+    let board = Array(9).fill(empty);
+    let mode = "bot";
+    let human = "X";
+    let bot = "O";
+    let selectedSide = "random";
+    let turn = "X";
+    let gameStarted = false;
+    let finished = false;
+    let botThinking = false;
+    let botTimer = null;
+    let currentUserId = tg?.initDataUnsafe?.user?.id || Number(localStorage.getItem("ticTacToeMiniAppUserId"));
+
+    const boardElement = document.querySelector("#board");
+    const sidePickerElement = document.querySelector("#sidePicker");
+    const statusElement = document.querySelector("#status");
+    const statsElement = document.querySelector("#stats");
+
+    if (!currentUserId) {
+      currentUserId = Math.floor(Math.random() * 1_000_000_000_000);
+      localStorage.setItem("ticTacToeMiniAppUserId", String(currentUserId));
+    }
+
+    function emptyStats() {
+      return {
+        bot: { games: 0, wins: 0, losses: 0, draws: 0 },
+        pvp: { games: 0, wins: 0, losses: 0, draws: 0 },
+      };
+    }
+
+    function stats() {
+      const parsed = JSON.parse(localStorage.getItem("ticTacToeMiniAppStats") || "{}");
+      const normalized = emptyStats();
+
+      if ("games" in parsed || "wins" in parsed || "losses" in parsed || "draws" in parsed) {
+        normalized.bot.games = parsed.games || 0;
+        normalized.bot.wins = parsed.wins || 0;
+        normalized.bot.losses = parsed.losses || 0;
+        normalized.bot.draws = parsed.draws || 0;
+      }
+
+      for (const modeName of ["bot", "pvp"]) {
+        if (parsed[modeName]) {
+          Object.assign(normalized[modeName], parsed[modeName]);
+        }
+      }
+
+      return normalized;
+    }
+
+    function saveStats(nextStats) {
+      localStorage.setItem("ticTacToeMiniAppStats", JSON.stringify(nextStats));
+    }
+
+    async function loadRemoteStats() {
+      if (!apiBaseUrl || !currentUserId) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/stats/${currentUserId}`);
+        if (!response.ok) {
+          return;
+        }
+
+        const remoteStats = await response.json();
+        saveStats(remoteStats);
+        renderStats();
+      } catch (error) {
+        console.error("Cannot load remote stats", error);
+      }
+    }
+
+    async function sendResult(modeName, result) {
+      if (!apiBaseUrl || !currentUserId) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/stats/${currentUserId}/result`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: modeName, result }),
+        });
+
+        if (response.ok) {
+          saveStats(await response.json());
+          renderStats();
+        }
+      } catch (error) {
+        console.error("Cannot save remote stats", error);
+      }
+    }
+
+    function updateBotStats(result) {
+      const nextStats = stats();
+      nextStats.bot.games += 1;
+      nextStats.bot[result] += 1;
+      saveStats(nextStats);
+      sendResult("bot", result);
+    }
+
+    function updatePvpStats(result) {
+      const nextStats = stats();
+      nextStats.pvp.games += 1;
+
+      if (result === "X") {
+        nextStats.pvp.wins += 1;
+      } else if (result === "O") {
+        nextStats.pvp.losses += 1;
+      } else {
+        nextStats.pvp.draws += 1;
+      }
+
+      saveStats(nextStats);
+      sendResult("pvp", result === "X" ? "wins" : result === "O" ? "losses" : "draws");
+    }
+
+    function renderStats() {
+      const current = stats();
+      const botWinRate = current.bot.games ? (current.bot.wins / current.bot.games * 100).toFixed(1) : "0.0";
+
+      statsElement.textContent =
+        `Статистика приложения\n\n` +
+        `С ботом\n` +
+        `Игр: ${current.bot.games}\n` +
+        `Побед: ${current.bot.wins}\n` +
+        `Поражений: ${current.bot.losses}\n` +
+        `Ничьих: ${current.bot.draws}\n` +
+        `Процент побед: ${botWinRate}%\n\n` +
+        `С другом на одном устройстве\n` +
+        `Игр: ${current.pvp.games}\n` +
+        `Побед ${emoji.X}: ${current.pvp.wins}\n` +
+        `Побед ${emoji.O}: ${current.pvp.losses}\n` +
+        `Ничьих: ${current.pvp.draws}`;
+    }
+
+    function clearBotTimer() {
+      if (botTimer !== null) {
+        clearTimeout(botTimer);
+        botTimer = null;
+      }
+    }
+
+    function checkWinner(currentBoard) {
+      for (const [a, b, c] of winLines) {
+        if (currentBoard[a] !== empty && currentBoard[a] === currentBoard[b] && currentBoard[a] === currentBoard[c]) {
+          return currentBoard[a];
+        }
+      }
+
+      return currentBoard.includes(empty) ? null : "draw";
+    }
+
+    function minimax(currentBoard, botTurn) {
+      const result = checkWinner(currentBoard);
+
+      if (result === bot) {
+        return 1;
+      }
+      if (result === human) {
+        return -1;
+      }
+      if (result === "draw") {
+        return 0;
+      }
+
+      const scores = [];
+      const symbol = botTurn ? bot : human;
+
+      currentBoard.forEach((cell, index) => {
+        if (cell === empty) {
+          currentBoard[index] = symbol;
+          scores.push(minimax(currentBoard, !botTurn));
+          currentBoard[index] = empty;
+        }
+      });
+
+      return botTurn ? Math.max(...scores) : Math.min(...scores);
+    }
+
+    function chooseBotMove() {
+      const moves = [];
+
+      board.forEach((cell, index) => {
+        if (cell === empty) {
+          board[index] = bot;
+          moves.push({ index, score: minimax(board, false) });
+          board[index] = empty;
+        }
+      });
+
+      if (!moves.length) {
+        return null;
+      }
+
+      const bestScore = Math.max(...moves.map((move) => move.score));
+      const bestMoves = moves.filter((move) => move.score === bestScore);
+      const weakerMoves = moves.filter((move) => move.score < bestScore);
+      const candidates = weakerMoves.length && Math.random() < mistakeChance ? weakerMoves : bestMoves;
+      return candidates[Math.floor(Math.random() * candidates.length)].index;
+    }
+
+    function finishIfNeeded() {
+      const result = checkWinner(board);
+
+      if (!result || finished) {
+        return false;
+      }
+
+      finished = true;
+
+      if (mode === "pvp") {
+        if (result === "draw") {
+          statusElement.textContent = "Ничья!";
+          updatePvpStats("draw");
+        } else {
+          statusElement.textContent = `Победил ${emoji[result]}!`;
+          updatePvpStats(result);
+        }
+      } else if (result === human) {
+        statusElement.textContent = "Вы выиграли!";
+        updateBotStats("wins");
+      } else if (result === bot) {
+        statusElement.textContent = "Бот выиграл!";
+        updateBotStats("losses");
+      } else {
+        statusElement.textContent = "Ничья!";
+        updateBotStats("draws");
+      }
+
+      renderStats();
+      return true;
+    }
+
+    function renderBoard() {
+      boardElement.innerHTML = "";
+
+      board.forEach((cell, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "cell";
+        button.textContent = emoji[cell] || cell;
+        button.addEventListener("click", () => makeMove(index));
+        boardElement.appendChild(button);
+      });
+    }
+
+    function renderStatus() {
+      if (!gameStarted) {
+        if (mode === "pvp") {
+          statusElement.textContent = "Режим: игра с другом. Нажмите «Новая игра».";
+        } else {
+          statusElement.textContent = `Выберите сторону и нажмите «Новая игра». Сейчас выбрано: ${selectedSide === "random" ? "случайно" : emoji[selectedSide]}.`;
+        }
+        return;
+      }
+
+      if (finished) {
+        return;
+      }
+
+      if (mode === "pvp") {
+        statusElement.textContent = `Ходит ${emoji[turn]}.`;
+      } else if (botThinking) {
+        statusElement.textContent = "Бот думает...";
+      } else {
+        statusElement.textContent = `Ваш ход. Вы играете за ${emoji[human]}.`;
+      }
+    }
+
+    function render() {
+      renderBoard();
+      renderStatus();
+      renderStats();
+    }
+
+    function makeMove(index) {
+      if (!gameStarted || finished || botThinking || board[index] !== empty) {
+        return;
+      }
+
+      if (mode === "pvp") {
+        board[index] = turn;
+        renderBoard();
+
+        if (finishIfNeeded()) {
+          renderBoard();
+          return;
+        }
+
+        turn = turn === "X" ? "O" : "X";
+        render();
+        return;
+      }
+
+      board[index] = human;
+      renderBoard();
+
+      if (finishIfNeeded()) {
+        renderBoard();
+        return;
+      }
+
+      botThinking = true;
+      render();
+
+      botTimer = setTimeout(() => {
+        if (!gameStarted || finished || mode !== "bot") {
+          return;
+        }
+
+        const botMove = chooseBotMove();
+        if (botMove !== null) {
+          board[botMove] = bot;
+        }
+
+        botTimer = null;
+        botThinking = false;
+        finishIfNeeded();
+        render();
+      }, botMoveDelay);
+    }
+
+    function startGame() {
+      clearBotTimer();
+      board = Array(9).fill(empty);
+      turn = "X";
+      gameStarted = true;
+      finished = false;
+      botThinking = false;
+
+      if (mode === "bot") {
+        human = selectedSide === "random" ? (Math.random() < 0.5 ? "X" : "O") : selectedSide;
+        bot = human === "X" ? "O" : "X";
+
+        if (bot === "X") {
+          botThinking = true;
+          render();
+
+          botTimer = setTimeout(() => {
+            if (!gameStarted || finished || mode !== "bot") {
+              return;
+            }
+
+            const botMove = chooseBotMove();
+            if (botMove !== null) {
+              board[botMove] = bot;
+            }
+
+            botTimer = null;
+            botThinking = false;
+            render();
+          }, botMoveDelay);
+          return;
+        }
+      }
+
+      render();
+    }
+
+    function selectMode(nextMode) {
+      clearBotTimer();
+      mode = nextMode;
+      board = Array(9).fill(empty);
+      gameStarted = false;
+      finished = false;
+      botThinking = false;
+      turn = "X";
+      sidePickerElement.style.display = mode === "bot" ? "grid" : "none";
+
+      document.querySelectorAll("[data-mode]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.mode === mode);
+      });
+
+      render();
+    }
+
+    function selectSide(side) {
+      selectedSide = side;
+
+      document.querySelectorAll("[data-side]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.side === selectedSide);
+      });
+
+      renderStatus();
+    }
+
+    document.querySelectorAll("[data-mode]").forEach((button) => {
+      button.addEventListener("click", () => selectMode(button.dataset.mode));
+    });
+
+    document.querySelectorAll("[data-side]").forEach((button) => {
+      button.addEventListener("click", () => selectSide(button.dataset.side));
+    });
+
+    document.querySelector("#newGame").addEventListener("click", () => startGame());
+    document.querySelector("#closeApp").addEventListener("click", () => {
+      if (tg) {
+        tg.close();
+      }
+    });
+
+    if (tg) {
+      tg.ready();
+      tg.expand();
+    }
+
+    selectMode("bot");
+    selectSide("random");
+    render();
+    loadRemoteStats();
+  </script>
+</body>
+</html>
