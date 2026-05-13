@@ -92,6 +92,9 @@ The main dependency is `python-telegram-bot`.
 
 - Telegram tic-tac-toe game.
 - Inline keyboard game board.
+- Bot supports Russian and English.
+- On first `/start`, bot asks the user to choose a language.
+- Users can change language later through `Настройки` / `Settings` or `/settings`.
 - Telegram Mini App:
   - static frontend in `webapp/index.html`
   - opens from bot button `Открыть приложение`

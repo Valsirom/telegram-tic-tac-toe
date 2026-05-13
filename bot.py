@@ -28,6 +28,8 @@ SYMBOL_EMOJI = {"X": "❎", "O": "⭕"}
 BOT_MISTAKE_CHANCE = 0.30
 BOT_MOVE_DELAY_SECONDS = 0.8
 WEBAPP_PVP_GAME_TTL_SECONDS = 6 * 60 * 60
+DEFAULT_LANGUAGE = "ru"
+SUPPORTED_LANGUAGES = ("ru", "en")
 STATS_FILE = Path(__file__).with_name("stats.json")
 WEBAPP_FILE = Path(__file__).with_name("webapp") / "index.html"
 WIN_LINES = (
@@ -40,6 +42,103 @@ WIN_LINES = (
     (0, 4, 8),
     (2, 4, 6),
 )
+
+TEXTS = {
+    "ru": {
+        "app_button": "Открыть приложение",
+        "bot_name": "Бот",
+        "player_name": "Игрок",
+        "choose_language": "Выберите язык / Choose your language:",
+        "language_changed": "Язык изменён на русский.",
+        "main_menu": "Крестики-нолики\n\nВыберите режим игры:",
+        "play_bot": "Играть с ботом",
+        "play_friend": "Играть с другом",
+        "stats": "Статистика",
+        "settings": "Настройки",
+        "settings_title": "Настройки\n\nВыберите язык:",
+        "play_x": "Играть за ❎",
+        "play_o": "Играть за ⭕",
+        "random": "Случайно",
+        "new_game": "Новая игра",
+        "winner": "Победил {name}!",
+        "you_won": "Вы выиграли!",
+        "bot_won": "Бот выиграл!",
+        "draw": "Ничья!",
+        "turn": "Ходит {name} ({symbol}).",
+        "bot_thinking": "Бот думает...",
+        "your_turn": "Ваш ход. Вы играете за {symbol}.",
+        "game_friend_title": "Крестики-нолики: игра с другом",
+        "game_title": "Крестики-нолики",
+        "bot_game_sides": "Вы играете за {human}, бот играет за {bot}.",
+        "stats_title": "Ваша статистика",
+        "stats_bot": "Игра с ботом",
+        "stats_pvp": "Игра с другом",
+        "stats_games": "Игр",
+        "stats_wins": "Побед",
+        "stats_losses": "Поражений",
+        "stats_draws": "Ничьих",
+        "stats_win_rate": "Процент побед",
+        "waiting": "Ищем соперника...\n\nКогда другой пользователь нажмёт «Играть с другом» в боте или приложении, бот соединит вас автоматически.",
+        "webapp_not_configured": "Ссылка на Telegram Mini App не настроена.\n\nУкажите HTTPS-ссылку в переменной окружения {env}.",
+        "open_app_message": "Откройте приложение с игрой:",
+        "choose_side": "Выберите, за кого хотите играть:",
+        "choose_mode_first": "Сначала выберите режим игры:",
+        "need_second_player": "Сначала должен присоединиться второй игрок",
+        "not_your_game": "Это не ваша игра",
+        "other_turn": "Сейчас ход другого игрока",
+        "wait_bot": "Подождите ход бота",
+        "cell_occupied": "Эта клетка уже занята",
+        "token_required": "Укажите токен бота в переменной окружения {env}",
+        "menu_button": "Приложение",
+    },
+    "en": {
+        "app_button": "Open app",
+        "bot_name": "Bot",
+        "player_name": "Player",
+        "choose_language": "Choose your language / Выберите язык:",
+        "language_changed": "Language changed to English.",
+        "main_menu": "Tic-Tac-Toe\n\nChoose game mode:",
+        "play_bot": "Play with bot",
+        "play_friend": "Play with a friend",
+        "stats": "Stats",
+        "settings": "Settings",
+        "settings_title": "Settings\n\nChoose language:",
+        "play_x": "Play as ❎",
+        "play_o": "Play as ⭕",
+        "random": "Random",
+        "new_game": "New game",
+        "winner": "{name} won!",
+        "you_won": "You won!",
+        "bot_won": "Bot won!",
+        "draw": "Draw!",
+        "turn": "{name} ({symbol}) to move.",
+        "bot_thinking": "Bot is thinking...",
+        "your_turn": "Your turn. You play as {symbol}.",
+        "game_friend_title": "Tic-Tac-Toe: play with a friend",
+        "game_title": "Tic-Tac-Toe",
+        "bot_game_sides": "You play as {human}, bot plays as {bot}.",
+        "stats_title": "Your stats",
+        "stats_bot": "Game with bot",
+        "stats_pvp": "Game with a friend",
+        "stats_games": "Games",
+        "stats_wins": "Wins",
+        "stats_losses": "Losses",
+        "stats_draws": "Draws",
+        "stats_win_rate": "Win rate",
+        "waiting": "Looking for an opponent...\n\nWhen another user taps “Play with a friend” in the bot or app, the bot will connect you automatically.",
+        "webapp_not_configured": "Telegram Mini App URL is not configured.\n\nSet an HTTPS URL in the {env} environment variable.",
+        "open_app_message": "Open the game app:",
+        "choose_side": "Choose your side:",
+        "choose_mode_first": "Choose game mode first:",
+        "need_second_player": "The second player must join first",
+        "not_your_game": "This is not your game",
+        "other_turn": "It is the other player's turn",
+        "wait_bot": "Wait for the bot move",
+        "cell_occupied": "This cell is already occupied",
+        "token_required": "Set the bot token in the {env} environment variable",
+        "menu_button": "App",
+    },
+}
 
 
 @dataclass
@@ -76,7 +175,7 @@ class WaitingPlayer:
 games: dict[int, Game] = {}
 waiting_players: dict[int, WaitingPlayer] = {}
 webapp_pvp_games: dict[str, Game] = {}
-stats: dict[str, dict[str, dict[str, int]]] = {}
+stats: dict[str, dict] = {}
 telegram_application: Application | None = None
 app = FastAPI(title="Telegram Tic-Tac-Toe Bot")
 app.add_middleware(
@@ -92,7 +191,7 @@ def empty_stats() -> dict[str, int]:
     return {"games": 0, "wins": 0, "losses": 0, "draws": 0}
 
 
-def normalize_stats(raw_stats: dict) -> dict[str, dict[str, dict[str, int]]]:
+def normalize_stats(raw_stats: dict) -> dict[str, dict]:
     normalized = {}
 
     for user_id, user_stats in raw_stats.items():
@@ -102,6 +201,7 @@ def normalize_stats(raw_stats: dict) -> dict[str, dict[str, dict[str, int]]]:
         normalized[str(user_id)] = {
             "bot": empty_stats(),
             "pvp": empty_stats(),
+            "settings": {},
         }
 
         for mode in ("bot", "pvp"):
@@ -116,10 +216,14 @@ def normalize_stats(raw_stats: dict) -> dict[str, dict[str, dict[str, int]]]:
                 value = user_stats.get(key, 0)
                 normalized[str(user_id)]["bot"][key] += value if isinstance(value, int) else 0
 
+        settings = user_stats.get("settings")
+        if isinstance(settings, dict) and settings.get("language") in SUPPORTED_LANGUAGES:
+            normalized[str(user_id)]["settings"]["language"] = settings["language"]
+
     return normalized
 
 
-def load_stats() -> dict[str, dict[str, dict[str, int]]]:
+def load_stats() -> dict[str, dict]:
     if not STATS_FILE.exists():
         return {}
 
@@ -138,7 +242,7 @@ def save_stats() -> None:
     )
 
 
-def get_user_stats(user_id: int) -> dict[str, dict[str, int]]:
+def get_user_stats(user_id: int) -> dict:
     user_stats = stats.setdefault(str(user_id), {})
 
     for mode in ("bot", "pvp"):
@@ -146,10 +250,39 @@ def get_user_stats(user_id: int) -> dict[str, dict[str, int]]:
         for key in ("games", "wins", "losses", "draws"):
             user_stats[mode].setdefault(key, 0)
 
+    user_stats.setdefault("settings", {})
     return user_stats
 
 
 stats.update(load_stats())
+
+
+def user_has_language(user_id: int) -> bool:
+    return get_user_stats(user_id).get("settings", {}).get("language") in SUPPORTED_LANGUAGES
+
+
+def user_language(user_id: int | None) -> str:
+    if user_id is None:
+        return DEFAULT_LANGUAGE
+
+    language = get_user_stats(user_id).get("settings", {}).get("language")
+    return language if language in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
+
+
+def set_user_language(user_id: int, language: str) -> None:
+    if language not in SUPPORTED_LANGUAGES:
+        return
+
+    get_user_stats(user_id)["settings"]["language"] = language
+    save_stats()
+
+
+def text_for_language(language: str, key: str, **kwargs) -> str:
+    return TEXTS.get(language, TEXTS[DEFAULT_LANGUAGE]).get(key, TEXTS[DEFAULT_LANGUAGE][key]).format(**kwargs)
+
+
+def text_for_user(user_id: int | None, key: str, **kwargs) -> str:
+    return text_for_language(user_language(user_id), key, **kwargs)
 
 
 def supabase_configured() -> bool:
@@ -178,7 +311,7 @@ def local_add_user_result(user_id: int, mode: str, result: str) -> None:
     save_stats()
 
 
-async def supabase_get_stats(user_id: int) -> dict[str, dict[str, int]] | None:
+async def supabase_get_stats(user_id: int) -> dict | None:
     if not supabase_configured():
         return None
 
@@ -196,7 +329,7 @@ async def supabase_get_stats(user_id: int) -> dict[str, dict[str, int]] | None:
     return normalize_stats({str(user_id): rows[0].get("stats", {})}).get(str(user_id))
 
 
-async def supabase_set_stats(user_id: int, user_stats: dict[str, dict[str, int]]) -> None:
+async def supabase_set_stats(user_id: int, user_stats: dict) -> None:
     url = f"{os.getenv(SUPABASE_URL_ENV_NAME).rstrip('/')}/rest/v1/user_stats"
     payload = {"user_id": str(user_id), "stats": user_stats}
 
@@ -218,7 +351,7 @@ async def async_add_user_result(user_id: int, mode: str, result: str) -> None:
         user_stats = await supabase_get_stats(user_id)
 
         if user_stats is None:
-            user_stats = {"bot": empty_stats(), "pvp": empty_stats()}
+            user_stats = get_user_stats(user_id)
 
         user_stats.setdefault(mode, empty_stats())
         user_stats[mode]["games"] += 1
@@ -229,7 +362,7 @@ async def async_add_user_result(user_id: int, mode: str, result: str) -> None:
         local_add_user_result(user_id, mode, result)
 
 
-async def get_stats_for_api(user_id: int) -> dict[str, dict[str, int]]:
+async def get_stats_for_api(user_id: int) -> dict:
     if supabase_configured():
         try:
             user_stats = await supabase_get_stats(user_id)
@@ -239,6 +372,40 @@ async def get_stats_for_api(user_id: int) -> dict[str, dict[str, int]]:
             log_supabase_error("read", error)
 
     return get_user_stats(user_id)
+
+
+async def async_load_user_language(user_id: int) -> None:
+    if user_has_language(user_id) or not supabase_configured():
+        return
+
+    try:
+        user_stats = await supabase_get_stats(user_id)
+    except Exception as error:
+        log_supabase_error("read language", error)
+        return
+
+    language = (user_stats or {}).get("settings", {}).get("language")
+    if language in SUPPORTED_LANGUAGES:
+        get_user_stats(user_id)["settings"]["language"] = language
+
+
+async def async_set_user_language(user_id: int, language: str) -> None:
+    if language not in SUPPORTED_LANGUAGES:
+        return
+
+    set_user_language(user_id, language)
+
+    if not supabase_configured():
+        return
+
+    try:
+        user_stats = await supabase_get_stats(user_id)
+        if user_stats is None:
+            user_stats = get_user_stats(user_id)
+        user_stats.setdefault("settings", {})["language"] = language
+        await supabase_set_stats(user_id, user_stats)
+    except Exception as error:
+        log_supabase_error("write language", error)
 
 
 def game_key(update: Update) -> int:
@@ -301,38 +468,54 @@ def choose_bot_move(board: list[str], human: str, bot: str) -> int | None:
     return random.choice(best_moves)
 
 
-def choose_mode_markup() -> InlineKeyboardMarkup:
+def language_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Русский", callback_data="lang:ru"),
+                InlineKeyboardButton("English", callback_data="lang:en"),
+            ],
+        ]
+    )
+
+
+def choose_mode_markup(user_id: int | None = None) -> InlineKeyboardMarkup:
     keyboard = []
     webapp_url = os.getenv(WEBAPP_URL_ENV_NAME)
 
     if webapp_url:
-        keyboard.append([InlineKeyboardButton("Открыть приложение", web_app=WebAppInfo(webapp_url))])
+        keyboard.append(
+            [InlineKeyboardButton(text_for_user(user_id, "app_button"), web_app=WebAppInfo(webapp_url))]
+        )
 
     keyboard.extend(
         [
-            [InlineKeyboardButton("Играть с ботом", callback_data="mode:bot")],
-            [InlineKeyboardButton("Играть с другом", callback_data="mode:pvp")],
-            [InlineKeyboardButton("Статистика", callback_data="stats")],
+            [InlineKeyboardButton(text_for_user(user_id, "play_bot"), callback_data="mode:bot")],
+            [InlineKeyboardButton(text_for_user(user_id, "play_friend"), callback_data="mode:pvp")],
+            [
+                InlineKeyboardButton(text_for_user(user_id, "stats"), callback_data="stats"),
+                InlineKeyboardButton(text_for_user(user_id, "settings"), callback_data="settings"),
+            ],
         ]
     )
 
     return InlineKeyboardMarkup(keyboard)
 
 
-def choose_side_markup() -> InlineKeyboardMarkup:
+def choose_side_markup(user_id: int | None = None) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("Играть за ❎", callback_data="side:bot:X"),
-                InlineKeyboardButton("Играть за ⭕", callback_data="side:bot:O"),
+                InlineKeyboardButton(text_for_user(user_id, "play_x"), callback_data="side:bot:X"),
+                InlineKeyboardButton(text_for_user(user_id, "play_o"), callback_data="side:bot:O"),
             ],
-            [InlineKeyboardButton("Случайно", callback_data="side:bot:random")],
-            [InlineKeyboardButton("Статистика", callback_data="stats")],
+            [InlineKeyboardButton(text_for_user(user_id, "random"), callback_data="side:bot:random")],
+            [InlineKeyboardButton(text_for_user(user_id, "stats"), callback_data="stats")],
         ]
     )
 
 
-def board_markup(board: list[str]) -> InlineKeyboardMarkup:
+def board_markup(board: list[str], user_id: int | None = None) -> InlineKeyboardMarkup:
     keyboard = []
 
     for row in range(3):
@@ -346,26 +529,38 @@ def board_markup(board: list[str]) -> InlineKeyboardMarkup:
 
     keyboard.append(
         [
-            InlineKeyboardButton("Новая игра", callback_data="new"),
-            InlineKeyboardButton("Статистика", callback_data="stats"),
+            InlineKeyboardButton(text_for_user(user_id, "new_game"), callback_data="new"),
+            InlineKeyboardButton(text_for_user(user_id, "stats"), callback_data="stats"),
         ]
     )
     return InlineKeyboardMarkup(keyboard)
 
 
-def stats_markup() -> InlineKeyboardMarkup:
+def stats_markup(user_id: int | None = None) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("Новая игра", callback_data="new")],
+            [InlineKeyboardButton(text_for_user(user_id, "new_game"), callback_data="new")],
+            [InlineKeyboardButton(text_for_user(user_id, "settings"), callback_data="settings")],
         ]
     )
 
 
-def waiting_markup() -> InlineKeyboardMarkup:
+def waiting_markup(user_id: int | None = None) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("Новая игра", callback_data="new")],
-            [InlineKeyboardButton("Статистика", callback_data="stats")],
+            [InlineKeyboardButton(text_for_user(user_id, "new_game"), callback_data="new")],
+            [InlineKeyboardButton(text_for_user(user_id, "stats"), callback_data="stats")],
+        ]
+    )
+
+
+def settings_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Русский", callback_data="lang:ru"),
+                InlineKeyboardButton("English", callback_data="lang:en"),
+            ],
         ]
     )
 
@@ -374,26 +569,31 @@ def symbol_text(symbol: str) -> str:
     return SYMBOL_EMOJI.get(symbol, symbol)
 
 
-def status_text(game: Game) -> str:
+def status_text(game: Game, user_id: int | None = None) -> str:
     board = game.board
     result = check_winner(board)
 
     if result in ("X", "O"):
         if game.mode == "pvp":
-            return f"Победил {player_name(game, result)}!"
+            return text_for_user(user_id, "winner", name=player_name(game, result))
         if result == game.human:
-            return "Вы выиграли!"
-        return "Бот выиграл!"
+            return text_for_user(user_id, "you_won")
+        return text_for_user(user_id, "bot_won")
     if result == "draw":
-        return "Ничья!"
+        return text_for_user(user_id, "draw")
 
     if game.mode == "pvp":
-        return f"Ходит {player_name(game, game.turn)} ({symbol_text(game.turn)})."
+        return text_for_user(
+            user_id,
+            "turn",
+            name=player_name(game, game.turn),
+            symbol=symbol_text(game.turn),
+        )
 
     if game.bot_thinking:
-        return "Бот думает..."
+        return text_for_user(user_id, "bot_thinking")
 
-    return f"Ваш ход. Вы играете за {symbol_text(game.human)}."
+    return text_for_user(user_id, "your_turn", symbol=symbol_text(game.human))
 
 
 def player_name(game: Game, symbol: str) -> str:
@@ -410,7 +610,7 @@ def player_symbol(game: Game, user_id: int) -> str | None:
 
 def display_name(update: Update) -> str:
     user = update.effective_user
-    return user.first_name or user.username or "Игрок"
+    return user.first_name or user.username or text_for_user(user.id, "player_name")
 
 
 def remove_user_from_waiting(user_id: int) -> None:
@@ -466,10 +666,10 @@ def parse_api_user_name(data: dict) -> str:
     name = data.get("name")
 
     if not isinstance(name, str):
-        return "Игрок"
+        return "Player"
 
     name = name.strip()
-    return name[:40] if name else "Игрок"
+    return name[:40] if name else "Player"
 
 
 def webapp_pvp_state(game: Game, user_id: int) -> dict:
@@ -611,8 +811,8 @@ def make_bot_game(human: str, user_id: int, user_name: str) -> Game:
     game = Game(board=[EMPTY] * 9, human=human, bot=bot, mode="bot")
     game.player_x_id = user_id if human == "X" else None
     game.player_o_id = user_id if human == "O" else None
-    game.player_x_name = user_name if human == "X" else "Бот"
-    game.player_o_name = user_name if human == "O" else "Бот"
+    game.player_x_name = user_name if human == "X" else text_for_user(user_id, "bot_name")
+    game.player_o_name = user_name if human == "O" else text_for_user(user_id, "bot_name")
 
     return game
 
@@ -635,20 +835,19 @@ def make_pvp_game(player_x: WaitingPlayer, player_o: WaitingPlayer) -> Game:
     )
 
 
-def game_text(game: Game) -> str:
+def game_text(game: Game, user_id: int | None = None) -> str:
     if game.mode == "pvp":
         return (
-            "Крестики-нолики: игра с другом\n\n"
+            f"{text_for_user(user_id, 'game_friend_title')}\n\n"
             f"{symbol_text('X')}: {game.player_x_name}\n"
             f"{symbol_text('O')}: {game.player_o_name}\n"
-            f"{status_text(game)}"
+            f"{status_text(game, user_id)}"
         )
 
     return (
-        "Крестики-нолики\n\n"
-        f"Вы играете за {symbol_text(game.human)}, "
-        f"бот играет за {symbol_text(game.bot)}.\n"
-        f"{status_text(game)}"
+        f"{text_for_user(user_id, 'game_title')}\n\n"
+        f"{text_for_user(user_id, 'bot_game_sides', human=symbol_text(game.human), bot=symbol_text(game.bot))}\n"
+        f"{status_text(game, user_id)}"
     )
 
 
@@ -726,24 +925,24 @@ def stats_text(user_id: int) -> str:
 
         return (
             f"{title}\n"
-            f"Игр: {games_count}\n"
-            f"Побед: {wins}\n"
-            f"Поражений: {losses}\n"
-            f"Ничьих: {draws}\n"
-            f"Процент побед: {win_rate:.1f}%"
+            f"{text_for_user(user_id, 'stats_games')}: {games_count}\n"
+            f"{text_for_user(user_id, 'stats_wins')}: {wins}\n"
+            f"{text_for_user(user_id, 'stats_losses')}: {losses}\n"
+            f"{text_for_user(user_id, 'stats_draws')}: {draws}\n"
+            f"{text_for_user(user_id, 'stats_win_rate')}: {win_rate:.1f}%"
         )
 
     return (
-        "Ваша статистика\n\n"
-        f"{section('Игра с ботом', 'bot')}\n\n"
-        f"{section('Игра с другом', 'pvp')}"
+        f"{text_for_user(user_id, 'stats_title')}\n\n"
+        f"{section(text_for_user(user_id, 'stats_bot'), 'bot')}\n\n"
+        f"{section(text_for_user(user_id, 'stats_pvp'), 'pvp')}"
     )
 
 
 async def edit_pvp_messages(bot, game: Game) -> None:
-    for chat_id, message_id in (
-        (game.player_x_chat_id, game.player_x_message_id),
-        (game.player_o_chat_id, game.player_o_message_id),
+    for user_id, chat_id, message_id in (
+        (game.player_x_id, game.player_x_chat_id, game.player_x_message_id),
+        (game.player_o_id, game.player_o_chat_id, game.player_o_message_id),
     ):
         if chat_id is None or message_id is None:
             continue
@@ -752,8 +951,8 @@ async def edit_pvp_messages(bot, game: Game) -> None:
             await bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=message_id,
-                text=game_text(game),
-                reply_markup=board_markup(game.board),
+                text=game_text(game, user_id),
+                reply_markup=board_markup(game.board, user_id),
             )
         except TelegramError:
             pass
@@ -773,6 +972,7 @@ async def update_pvp_bot_messages(game: Game) -> None:
 async def start_pvp_matchmaking(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     user = update.effective_user
+    await async_load_user_language(user.id)
     cleanup_webapp_pvp_games()
     remove_user_from_waiting(user.id)
 
@@ -798,10 +998,8 @@ async def start_pvp_matchmaking(update: Update, context: ContextTypes.DEFAULT_TY
     if not candidates:
         waiting_players[user.id] = current
         await query.edit_message_text(
-            "Ищем соперника...\n\n"
-            "Когда другой пользователь нажмёт «Играть с другом» в боте или приложении, "
-            "бот соединит вас автоматически.",
-            reply_markup=waiting_markup(),
+            text_for_user(user.id, "waiting"),
+            reply_markup=waiting_markup(user.id),
         )
         return
 
@@ -812,62 +1010,124 @@ async def start_pvp_matchmaking(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await async_load_user_language(update.effective_user.id)
+    await configure_user_menu_button(context, update.effective_chat.id, update.effective_user.id)
+    if not user_has_language(update.effective_user.id):
+        await show_language_selection(update, context)
+        return
+
     await new_game(update, context)
 
 
-async def new_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    remove_user_from_waiting(update.effective_user.id)
-    text = "Крестики-нолики\n\nВыберите режим игры:"
+async def show_language_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = text_for_language(DEFAULT_LANGUAGE, "choose_language")
 
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text(text, reply_markup=choose_mode_markup())
+        await update.callback_query.edit_message_text(text, reply_markup=language_markup())
     else:
-        await update.message.reply_text(text, reply_markup=choose_mode_markup())
+        await update.message.reply_text(text, reply_markup=language_markup())
+
+
+async def new_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await async_load_user_language(update.effective_user.id)
+    await configure_user_menu_button(context, update.effective_chat.id, update.effective_user.id)
+    if not user_has_language(update.effective_user.id):
+        await show_language_selection(update, context)
+        return
+
+    remove_user_from_waiting(update.effective_user.id)
+    text = text_for_user(update.effective_user.id, "main_menu")
+
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text(
+            text,
+            reply_markup=choose_mode_markup(update.effective_user.id),
+        )
+    else:
+        await update.message.reply_text(text, reply_markup=choose_mode_markup(update.effective_user.id))
+
+
+async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await async_load_user_language(update.effective_user.id)
+    text = text_for_user(update.effective_user.id, "settings_title")
+
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text(text, reply_markup=settings_markup())
+    else:
+        await update.message.reply_text(text, reply_markup=settings_markup())
 
 
 async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await async_load_user_language(update.effective_user.id)
     if supabase_configured():
         user_stats = await get_stats_for_api(update.effective_user.id)
-        old_stats = stats.get(str(update.effective_user.id))
+        local_settings = get_user_stats(update.effective_user.id).get("settings", {})
         stats[str(update.effective_user.id)] = user_stats
+        if local_settings.get("language") in SUPPORTED_LANGUAGES:
+            stats[str(update.effective_user.id)].setdefault("settings", {})["language"] = local_settings["language"]
         text = stats_text(update.effective_user.id)
-        if old_stats is None:
-            stats.pop(str(update.effective_user.id), None)
-        else:
-            stats[str(update.effective_user.id)] = old_stats
     else:
         text = stats_text(update.effective_user.id)
 
     if update.callback_query:
-        await update.callback_query.edit_message_text(text, reply_markup=stats_markup())
+        await update.callback_query.edit_message_text(
+            text,
+            reply_markup=stats_markup(update.effective_user.id),
+        )
     else:
-        await update.message.reply_text(text, reply_markup=stats_markup())
+        await update.message.reply_text(text, reply_markup=stats_markup(update.effective_user.id))
 
 
 async def open_app(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await async_load_user_language(update.effective_user.id)
     webapp_url = os.getenv(WEBAPP_URL_ENV_NAME)
 
     if not webapp_url:
         await update.message.reply_text(
-            "Ссылка на Telegram Mini App не настроена.\n\n"
-            f"Укажите HTTPS-ссылку в переменной окружения {WEBAPP_URL_ENV_NAME}."
+            text_for_user(update.effective_user.id, "webapp_not_configured", env=WEBAPP_URL_ENV_NAME)
         )
         return
 
     await update.message.reply_text(
-        "Откройте приложение с игрой:",
+        text_for_user(update.effective_user.id, "open_app_message"),
         reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Открыть приложение", web_app=WebAppInfo(webapp_url))]]
+            [
+                [
+                    InlineKeyboardButton(
+                        text_for_user(update.effective_user.id, "app_button"),
+                        web_app=WebAppInfo(webapp_url),
+                    )
+                ]
+            ]
         ),
     )
 
 
 async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
+    user_id = update.effective_user.id
+    await async_load_user_language(user_id)
+
+    if query.data.startswith("lang:"):
+        language = query.data.split(":", 1)[1]
+        await async_set_user_language(user_id, language)
+        await configure_user_menu_button(context, update.effective_chat.id, user_id)
+        await query.answer()
+        await query.edit_message_text(
+            f"{text_for_user(user_id, 'language_changed')}\n\n{text_for_user(user_id, 'main_menu')}",
+            reply_markup=choose_mode_markup(user_id),
+        )
+        return
 
     if query.data == "new":
         await new_game(update, context)
+        return
+
+    if query.data == "settings":
+        await show_settings(update, context)
         return
 
     if query.data == "stats":
@@ -883,8 +1143,8 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             return
 
         await query.edit_message_text(
-            "Выберите, за кого хотите играть:",
-            reply_markup=choose_side_markup(),
+            text_for_user(user_id, "choose_side"),
+            reply_markup=choose_side_markup(user_id),
         )
         return
 
@@ -899,10 +1159,16 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         user = update.effective_user
         game = make_bot_game(human, user.id, display_name(update))
         games[game_key(update)] = game
-        await query.edit_message_text(game_text(game), reply_markup=board_markup(game.board))
+        await query.edit_message_text(
+            game_text(game, user_id),
+            reply_markup=board_markup(game.board, user_id),
+        )
         if game.bot == "X":
             game.bot_thinking = True
-            await query.edit_message_text(game_text(game), reply_markup=board_markup(game.board))
+            await query.edit_message_text(
+                game_text(game, user_id),
+                reply_markup=board_markup(game.board, user_id),
+            )
             await asyncio.sleep(BOT_MOVE_DELAY_SECONDS)
             if games.get(game_key(update)) is not game:
                 return
@@ -910,7 +1176,10 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             if bot_move is not None:
                 game.board[bot_move] = game.bot
             game.bot_thinking = False
-            await query.edit_message_text(game_text(game), reply_markup=board_markup(game.board))
+            await query.edit_message_text(
+                game_text(game, user_id),
+                reply_markup=board_markup(game.board, user_id),
+            )
         return
 
     key = game_key(update)
@@ -919,8 +1188,8 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if game is None:
         await query.answer()
         await query.edit_message_text(
-            "Сначала выберите режим игры:",
-            reply_markup=choose_mode_markup(),
+            text_for_user(user_id, "choose_mode_first"),
+            reply_markup=choose_mode_markup(user_id),
         )
         return
 
@@ -932,34 +1201,34 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         if game.mode == "pvp":
             await update_pvp_messages(context, game)
         else:
-            await query.edit_message_text(game_text(game), reply_markup=board_markup(board))
+            await query.edit_message_text(game_text(game, user_id), reply_markup=board_markup(board, user_id))
         return
 
     index = int(query.data.split(":", 1)[1])
 
     if game.mode == "pvp":
         if None in (game.player_x_id, game.player_o_id):
-            await query.answer("Сначала должен присоединиться второй игрок", show_alert=True)
+            await query.answer(text_for_user(user_id, "need_second_player"), show_alert=True)
             return
 
         symbol = player_symbol(game, update.effective_user.id)
         if symbol is None:
-            await query.answer("Это не ваша игра", show_alert=True)
+            await query.answer(text_for_user(user_id, "not_your_game"), show_alert=True)
             return
         if symbol != game.turn:
-            await query.answer("Сейчас ход другого игрока", show_alert=True)
+            await query.answer(text_for_user(user_id, "other_turn"), show_alert=True)
             return
 
     if game.mode == "bot" and update.effective_user.id not in (game.player_x_id, game.player_o_id):
-        await query.answer("Это не ваша игра", show_alert=True)
+        await query.answer(text_for_user(user_id, "not_your_game"), show_alert=True)
         return
 
     if game.mode == "bot" and game.bot_thinking:
-        await query.answer("Подождите ход бота", show_alert=True)
+        await query.answer(text_for_user(user_id, "wait_bot"), show_alert=True)
         return
 
     if board[index] != EMPTY:
-        await query.answer("Эта клетка уже занята", show_alert=True)
+        await query.answer(text_for_user(user_id, "cell_occupied"), show_alert=True)
         return
 
     await query.answer()
@@ -971,7 +1240,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             game.turn = "O" if game.turn == "X" else "X"
     elif check_winner(board) is None:
         game.bot_thinking = True
-        await query.edit_message_text(game_text(game), reply_markup=board_markup(board))
+        await query.edit_message_text(game_text(game, user_id), reply_markup=board_markup(board, user_id))
         await asyncio.sleep(BOT_MOVE_DELAY_SECONDS)
         if games.get(game_key(update)) is not game:
             return
@@ -984,7 +1253,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if game.mode == "pvp":
         await update_pvp_messages(context, game)
     else:
-        await query.edit_message_text(game_text(game), reply_markup=board_markup(board))
+        await query.edit_message_text(game_text(game, user_id), reply_markup=board_markup(board, user_id))
 
 
 async def configure_menu_button(application: Application) -> None:
@@ -995,10 +1264,28 @@ async def configure_menu_button(application: Application) -> None:
 
     try:
         await application.bot.set_chat_menu_button(
-            menu_button=MenuButtonWebApp("Приложение", WebAppInfo(webapp_url))
+            menu_button=MenuButtonWebApp(
+                text_for_language(DEFAULT_LANGUAGE, "menu_button"),
+                WebAppInfo(webapp_url),
+            )
         )
     except TelegramError as error:
         print(f"Telegram menu button setup failed: {type(error).__name__}: {error}", flush=True)
+
+
+async def configure_user_menu_button(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int) -> None:
+    webapp_url = os.getenv(WEBAPP_URL_ENV_NAME)
+
+    if not webapp_url:
+        return
+
+    try:
+        await context.bot.set_chat_menu_button(
+            chat_id=chat_id,
+            menu_button=MenuButtonWebApp(text_for_user(user_id, "menu_button"), WebAppInfo(webapp_url)),
+        )
+    except TelegramError:
+        pass
 
 
 def main() -> None:
@@ -1010,12 +1297,13 @@ def build_application() -> Application:
     token = os.getenv(TOKEN_ENV_NAME)
 
     if not token:
-        raise RuntimeError(f"Укажите токен бота в переменной окружения {TOKEN_ENV_NAME}")
+        raise RuntimeError(text_for_language(DEFAULT_LANGUAGE, "token_required", env=TOKEN_ENV_NAME))
 
     application = Application.builder().token(token).post_init(configure_menu_button).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("new", new_game))
     application.add_handler(CommandHandler("stats", show_stats))
+    application.add_handler(CommandHandler("settings", show_settings))
     application.add_handler(CommandHandler("app", open_app))
     application.add_handler(CallbackQueryHandler(handle_button))
     return application
@@ -1108,12 +1396,12 @@ async def webhook(request: Request) -> dict[str, bool]:
 
 
 @app.get("/api/stats/{user_id}")
-async def api_get_stats(user_id: int) -> dict[str, dict[str, int]]:
+async def api_get_stats(user_id: int) -> dict:
     return await get_stats_for_api(user_id)
 
 
 @app.post("/api/stats/{user_id}/result")
-async def api_add_result(user_id: int, request: Request) -> dict[str, dict[str, int]]:
+async def api_add_result(user_id: int, request: Request) -> dict:
     data = await request.json()
     mode = data.get("mode")
     result = data.get("result")
