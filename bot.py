@@ -11,7 +11,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonWebApp, Update, WebAppInfo
 from telegram.error import TelegramError
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
@@ -59,35 +59,23 @@ class Game:
     turn: str = "X"
     bot_thinking: bool = False
     finished: bool = False
+    webapp_game_id: str | None = None
+    updated_at: float = 0.0
 
 
 @dataclass
 class WaitingPlayer:
     user_id: int
-    chat_id: int
-    message_id: int
+    chat_id: int | None
+    message_id: int | None
     name: str
-
-
-@dataclass
-class WebAppPvpGame:
-    game_id: str
-    board: list[str]
-    player_x_id: int | None = None
-    player_o_id: int | None = None
-    player_x_name: str = "Игрок ❎"
-    player_o_name: str = "Игрок ⭕"
-    turn: str = "X"
-    finished: bool = False
-    result_recorded: bool = False
-    created_at: float = 0.0
-    updated_at: float = 0.0
+    source: str = "bot"
+    webapp_game_id: str | None = None
 
 
 games: dict[int, Game] = {}
 waiting_players: dict[int, WaitingPlayer] = {}
-webapp_pvp_games: dict[str, WebAppPvpGame] = {}
-webapp_waiting_games: dict[int, str] = {}
+webapp_pvp_games: dict[str, Game] = {}
 stats: dict[str, dict[str, dict[str, int]]] = {}
 telegram_application: Application | None = None
 app = FastAPI(title="Telegram Tic-Tac-Toe Bot")
@@ -426,23 +414,18 @@ def display_name(update: Update) -> str:
 
 
 def remove_user_from_waiting(user_id: int) -> None:
-    waiting_players.pop(user_id, None)
+    waiting_player = waiting_players.pop(user_id, None)
+
+    if waiting_player is None or waiting_player.webapp_game_id is None:
+        return
+
+    game = webapp_pvp_games.get(waiting_player.webapp_game_id)
+    if game is not None and not webapp_pvp_has_two_players(game):
+        webapp_pvp_games.pop(waiting_player.webapp_game_id, None)
 
 
-def remove_webapp_user_from_waiting(user_id: int) -> None:
-    webapp_waiting_games.pop(user_id, None)
-
-
-def webapp_pvp_has_two_players(game: WebAppPvpGame) -> bool:
+def webapp_pvp_has_two_players(game: Game) -> bool:
     return game.player_x_id is not None and game.player_o_id is not None
-
-
-def webapp_player_symbol(game: WebAppPvpGame, user_id: int) -> str | None:
-    if user_id == game.player_x_id:
-        return "X"
-    if user_id == game.player_o_id:
-        return "O"
-    return None
 
 
 def cleanup_webapp_pvp_games() -> None:
@@ -454,11 +437,17 @@ def cleanup_webapp_pvp_games() -> None:
     ]
 
     for game_id in stale_game_ids:
-        webapp_pvp_games.pop(game_id, None)
+        stale_game = webapp_pvp_games.pop(game_id, None)
+        if stale_game is None:
+            continue
 
-    for user_id, game_id in list(webapp_waiting_games.items()):
-        if game_id not in webapp_pvp_games:
-            webapp_waiting_games.pop(user_id, None)
+        for player_id in (stale_game.player_x_id, stale_game.player_o_id):
+            if player_id is not None and games.get(player_id) is stale_game:
+                games.pop(player_id, None)
+
+    for user_id, waiting_player in list(waiting_players.items()):
+        if waiting_player.webapp_game_id and waiting_player.webapp_game_id not in webapp_pvp_games:
+            waiting_players.pop(user_id, None)
 
 
 def parse_api_user_id(data: dict) -> int:
@@ -483,9 +472,9 @@ def parse_api_user_name(data: dict) -> str:
     return name[:40] if name else "Игрок"
 
 
-def webapp_pvp_state(game: WebAppPvpGame, user_id: int) -> dict:
+def webapp_pvp_state(game: Game, user_id: int) -> dict:
     result = check_winner(game.board)
-    symbol = webapp_player_symbol(game, user_id)
+    symbol = player_symbol(game, user_id)
 
     if not webapp_pvp_has_two_players(game):
         status = "waiting"
@@ -495,7 +484,7 @@ def webapp_pvp_state(game: WebAppPvpGame, user_id: int) -> dict:
         status = "finished"
 
     return {
-        "game_id": game.game_id,
+        "game_id": game.webapp_game_id,
         "status": status,
         "board": game.board,
         "turn": game.turn,
@@ -509,31 +498,16 @@ def webapp_pvp_state(game: WebAppPvpGame, user_id: int) -> dict:
     }
 
 
-async def record_webapp_pvp_result(game: WebAppPvpGame) -> None:
-    result = check_winner(game.board)
-
-    if result is None or game.result_recorded:
-        return
-
-    game.finished = True
-    game.result_recorded = True
-
-    if result == "draw":
-        for player_id in (game.player_x_id, game.player_o_id):
-            if player_id is not None:
-                await async_add_user_result(player_id, "pvp", "draws")
-    else:
-        winner_id = game.player_x_id if result == "X" else game.player_o_id
-        loser_id = game.player_o_id if result == "X" else game.player_x_id
-        if winner_id is not None:
-            await async_add_user_result(winner_id, "pvp", "wins")
-        if loser_id is not None:
-            await async_add_user_result(loser_id, "pvp", "losses")
-
-
-def make_webapp_pvp_game(user_id: int, name: str) -> WebAppPvpGame:
+def make_waiting_webapp_pvp_game(user_id: int, name: str) -> Game:
     now = time.time()
-    game = WebAppPvpGame(game_id=uuid4().hex, board=[EMPTY] * 9, created_at=now, updated_at=now)
+    game = Game(
+        board=[EMPTY] * 9,
+        human="",
+        bot="",
+        mode="pvp",
+        webapp_game_id=uuid4().hex,
+        updated_at=now,
+    )
     symbol = random.choice(["X", "O"])
 
     if symbol == "X":
@@ -546,37 +520,89 @@ def make_webapp_pvp_game(user_id: int, name: str) -> WebAppPvpGame:
     return game
 
 
-def join_webapp_pvp_game(user_id: int, name: str) -> WebAppPvpGame:
+def fill_pvp_slot(game: Game, player: WaitingPlayer) -> None:
+    if game.player_x_id is None:
+        game.player_x_id = player.user_id
+        game.player_x_chat_id = player.chat_id
+        game.player_x_message_id = player.message_id
+        game.player_x_name = player.name
+    else:
+        game.player_o_id = player.user_id
+        game.player_o_chat_id = player.chat_id
+        game.player_o_message_id = player.message_id
+        game.player_o_name = player.name
+
+
+def register_pvp_game(game: Game) -> None:
+    if game.player_x_id is not None:
+        games[game.player_x_id] = game
+    if game.player_o_id is not None:
+        games[game.player_o_id] = game
+    if game.webapp_game_id is not None:
+        webapp_pvp_games[game.webapp_game_id] = game
+
+
+def complete_pvp_match(first: WaitingPlayer, second: WaitingPlayer) -> Game:
+    game = None
+
+    for player in (first, second):
+        if player.webapp_game_id is None:
+            continue
+
+        waiting_game = webapp_pvp_games.get(player.webapp_game_id)
+        if waiting_game is not None and not webapp_pvp_has_two_players(waiting_game):
+            game = waiting_game
+            break
+
+    if game is None:
+        player_x, player_o = random.sample([first, second], 2)
+        game = make_pvp_game(player_x, player_o)
+        game.webapp_game_id = first.webapp_game_id or second.webapp_game_id
+    else:
+        current_ids = {game.player_x_id, game.player_o_id}
+        for player in (first, second):
+            if player.user_id not in current_ids:
+                fill_pvp_slot(game, player)
+
+    game.updated_at = time.time()
+    register_pvp_game(game)
+    return game
+
+
+def join_webapp_pvp_game(user_id: int, name: str) -> Game:
     cleanup_webapp_pvp_games()
-    remove_webapp_user_from_waiting(user_id)
+    remove_user_from_waiting(user_id)
+    current = WaitingPlayer(
+        user_id=user_id,
+        chat_id=None,
+        message_id=None,
+        name=name,
+        source="webapp",
+        webapp_game_id=uuid4().hex,
+    )
 
     candidates = []
-    for opponent_id, game_id in list(webapp_waiting_games.items()):
-        if opponent_id == user_id:
+    for waiting_user_id, waiting_player in list(waiting_players.items()):
+        if waiting_user_id == user_id:
             continue
 
-        game = webapp_pvp_games.get(game_id)
-        if game is None or webapp_pvp_has_two_players(game):
-            webapp_waiting_games.pop(opponent_id, None)
-            continue
+        if waiting_player.webapp_game_id is not None:
+            waiting_game = webapp_pvp_games.get(waiting_player.webapp_game_id)
+            if waiting_game is None or webapp_pvp_has_two_players(waiting_game):
+                waiting_players.pop(waiting_user_id, None)
+                continue
 
-        candidates.append((opponent_id, game))
+        candidates.append(waiting_player)
 
     if candidates:
-        opponent_id, game = random.choice(candidates)
-        webapp_waiting_games.pop(opponent_id, None)
-        if game.player_x_id is None:
-            game.player_x_id = user_id
-            game.player_x_name = name
-        else:
-            game.player_o_id = user_id
-            game.player_o_name = name
-        game.updated_at = time.time()
-        return game
+        opponent = random.choice(candidates)
+        waiting_players.pop(opponent.user_id, None)
+        return complete_pvp_match(opponent, current)
 
-    game = make_webapp_pvp_game(user_id, name)
-    webapp_pvp_games[game.game_id] = game
-    webapp_waiting_games[user_id] = game.game_id
+    game = make_waiting_webapp_pvp_game(user_id, name)
+    current.webapp_game_id = game.webapp_game_id
+    webapp_pvp_games[game.webapp_game_id] = game
+    waiting_players[user_id] = current
     return game
 
 
@@ -605,6 +631,7 @@ def make_pvp_game(player_x: WaitingPlayer, player_o: WaitingPlayer) -> Game:
         player_o_message_id=player_o.message_id,
         player_x_name=player_x.name,
         player_o_name=player_o.name,
+        updated_at=time.time(),
     )
 
 
@@ -713,7 +740,7 @@ def stats_text(user_id: int) -> str:
     )
 
 
-async def update_pvp_messages(context: ContextTypes.DEFAULT_TYPE, game: Game) -> None:
+async def edit_pvp_messages(bot, game: Game) -> None:
     for chat_id, message_id in (
         (game.player_x_chat_id, game.player_x_message_id),
         (game.player_o_chat_id, game.player_o_message_id),
@@ -722,7 +749,7 @@ async def update_pvp_messages(context: ContextTypes.DEFAULT_TYPE, game: Game) ->
             continue
 
         try:
-            await context.bot.edit_message_text(
+            await bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=message_id,
                 text=game_text(game),
@@ -732,9 +759,21 @@ async def update_pvp_messages(context: ContextTypes.DEFAULT_TYPE, game: Game) ->
             pass
 
 
+async def update_pvp_messages(context: ContextTypes.DEFAULT_TYPE, game: Game) -> None:
+    await edit_pvp_messages(context.bot, game)
+
+
+async def update_pvp_bot_messages(game: Game) -> None:
+    if telegram_application is None:
+        return
+
+    await edit_pvp_messages(telegram_application.bot, game)
+
+
 async def start_pvp_matchmaking(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     user = update.effective_user
+    cleanup_webapp_pvp_games()
     remove_user_from_waiting(user.id)
 
     current = WaitingPlayer(
@@ -743,23 +782,32 @@ async def start_pvp_matchmaking(update: Update, context: ContextTypes.DEFAULT_TY
         message_id=query.message.message_id,
         name=display_name(update),
     )
-    candidates = [player for player in waiting_players.values() if player.user_id != user.id]
+    candidates = []
+    for waiting_user_id, waiting_player in list(waiting_players.items()):
+        if waiting_user_id == user.id:
+            continue
+
+        if waiting_player.webapp_game_id is not None:
+            waiting_game = webapp_pvp_games.get(waiting_player.webapp_game_id)
+            if waiting_game is None or webapp_pvp_has_two_players(waiting_game):
+                waiting_players.pop(waiting_user_id, None)
+                continue
+
+        candidates.append(waiting_player)
 
     if not candidates:
         waiting_players[user.id] = current
         await query.edit_message_text(
             "Ищем соперника...\n\n"
-            "Когда другой пользователь нажмёт «Играть с другом», бот соединит вас автоматически.",
+            "Когда другой пользователь нажмёт «Играть с другом» в боте или приложении, "
+            "бот соединит вас автоматически.",
             reply_markup=waiting_markup(),
         )
         return
 
     opponent = random.choice(candidates)
-    remove_user_from_waiting(opponent.user_id)
-    player_x, player_o = random.sample([current, opponent], 2)
-    game = make_pvp_game(player_x, player_o)
-    games[player_x.user_id] = game
-    games[player_o.user_id] = game
+    waiting_players.pop(opponent.user_id, None)
+    game = complete_pvp_match(opponent, current)
     await update_pvp_messages(context, game)
 
 
@@ -918,6 +966,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     board[index] = game.turn if game.mode == "pvp" else game.human
 
     if game.mode == "pvp":
+        game.updated_at = time.time()
         if check_winner(board) is None:
             game.turn = "O" if game.turn == "X" else "X"
     elif check_winner(board) is None:
@@ -938,6 +987,20 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await query.edit_message_text(game_text(game), reply_markup=board_markup(board))
 
 
+async def configure_menu_button(application: Application) -> None:
+    webapp_url = os.getenv(WEBAPP_URL_ENV_NAME)
+
+    if not webapp_url:
+        return
+
+    try:
+        await application.bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp("Приложение", WebAppInfo(webapp_url))
+        )
+    except TelegramError as error:
+        print(f"Telegram menu button setup failed: {type(error).__name__}: {error}", flush=True)
+
+
 def main() -> None:
     application = build_application()
     application.run_polling()
@@ -949,7 +1012,7 @@ def build_application() -> Application:
     if not token:
         raise RuntimeError(f"Укажите токен бота в переменной окружения {TOKEN_ENV_NAME}")
 
-    application = Application.builder().token(token).build()
+    application = Application.builder().token(token).post_init(configure_menu_button).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("new", new_game))
     application.add_handler(CommandHandler("stats", show_stats))
@@ -965,6 +1028,7 @@ async def startup() -> None:
     telegram_application = build_application()
     await telegram_application.initialize()
     await telegram_application.start()
+    await configure_menu_button(telegram_application)
 
     webhook_url = os.getenv(WEBHOOK_URL_ENV_NAME)
     if webhook_url:
@@ -1071,6 +1135,8 @@ async def api_pvp_join(request: Request) -> dict:
     user_id = parse_api_user_id(data)
     name = parse_api_user_name(data)
     game = join_webapp_pvp_game(user_id, name)
+    if webapp_pvp_has_two_players(game):
+        await update_pvp_bot_messages(game)
     return webapp_pvp_state(game, user_id)
 
 
@@ -1081,7 +1147,7 @@ async def api_pvp_get_game(game_id: str, user_id: int) -> dict:
     if game is None:
         raise HTTPException(status_code=404, detail="Game not found")
 
-    if webapp_player_symbol(game, user_id) is None:
+    if player_symbol(game, user_id) is None:
         raise HTTPException(status_code=403, detail="This is not your game")
 
     game.updated_at = time.time()
@@ -1097,7 +1163,7 @@ async def api_pvp_move(game_id: str, request: Request) -> dict:
 
     data = await request.json()
     user_id = parse_api_user_id(data)
-    symbol = webapp_player_symbol(game, user_id)
+    symbol = player_symbol(game, user_id)
 
     if symbol is None:
         raise HTTPException(status_code=403, detail="This is not your game")
@@ -1106,7 +1172,8 @@ async def api_pvp_move(game_id: str, request: Request) -> dict:
         raise HTTPException(status_code=400, detail="Waiting for opponent")
 
     if check_winner(game.board) is not None:
-        await record_webapp_pvp_result(game)
+        await async_record_result(user_id, game)
+        await update_pvp_bot_messages(game)
         return webapp_pvp_state(game, user_id)
 
     if symbol != game.turn:
@@ -1129,7 +1196,9 @@ async def api_pvp_move(game_id: str, request: Request) -> dict:
     if check_winner(game.board) is None:
         game.turn = "O" if game.turn == "X" else "X"
     else:
-        await record_webapp_pvp_result(game)
+        await async_record_result(user_id, game)
+
+    await update_pvp_bot_messages(game)
 
     return webapp_pvp_state(game, user_id)
 

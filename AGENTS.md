@@ -95,10 +95,12 @@ The main dependency is `python-telegram-bot`.
 - Telegram Mini App:
   - static frontend in `webapp/index.html`
   - opens from bot button `Открыть приложение`
+  - can also be opened from Telegram's persistent bot menu button `Приложение` when `TELEGRAM_WEBAPP_URL` is set
   - requires HTTPS URL in `TELEGRAM_WEBAPP_URL`
   - command `/app` sends Mini App open button
   - supports game with bot and online game with friend on separate devices
   - Mini App online PvP uses backend matchmaking and polling API
+  - PvP matchmaking is shared between bot inline keyboard and Mini App, so one player can play in the bot and another in the app
   - in Mini App the game starts only after pressing `Новая игра`
   - Mini App bot moves are delayed by `botMoveDelay`
   - Mini App can be hosted on GitHub Pages and configured through `webapp/config.js`
