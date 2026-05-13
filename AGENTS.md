@@ -102,6 +102,7 @@ The main dependency is `python-telegram-bot`.
   - requires HTTPS URL in `TELEGRAM_WEBAPP_URL`
   - command `/app` sends Mini App open button
   - supports game with bot and online game with friend on separate devices
+  - automatically uses the language selected in the bot when backend stats return `settings.language`
   - Mini App online PvP uses backend matchmaking and polling API
   - PvP matchmaking is shared between bot inline keyboard and Mini App, so one player can play in the bot and another in the app
   - in Mini App the game starts only after pressing `Новая игра`

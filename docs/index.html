@@ -195,6 +195,87 @@
     const pvpPollDelay = 1500;
     const apiBaseUrl = (window.TIC_TAC_TOE_CONFIG?.API_BASE_URL || "").replace(/\/$/, "");
     const telegramUser = tg?.initDataUnsafe?.user;
+    const supportedLanguages = ["ru", "en"];
+    const translations = {
+      ru: {
+        pageTitle: "Крестики-нолики",
+        subtitle: "Telegram Mini App. Играйте с ботом или с другом прямо внутри Telegram.",
+        modeBot: "С ботом",
+        modePvp: "С другом",
+        playX: "Играть за ❎",
+        playO: "Играть за ⭕",
+        random: "Случайно",
+        newGame: "Новая игра",
+        close: "Закрыть",
+        playerName: "Игрок",
+        appStatsTitle: "Статистика приложения",
+        statsBot: "С ботом",
+        statsPvp: "С другом онлайн",
+        games: "Игр",
+        wins: "Побед",
+        losses: "Поражений",
+        draws: "Ничьих",
+        winRate: "Процент побед",
+        serverNotConfigured: "Сервер для игры с другом не настроен.",
+        connecting: "Подключаемся к игре...",
+        pvpIntro: "Режим: игра с другом онлайн. Нажмите «Новая игра», чтобы найти соперника.",
+        waitingOpponent: "Ищем соперника...",
+        youPlayAs: "Вы играете за {symbol}.",
+        draw: "Ничья!",
+        youWon: "Вы выиграли!",
+        winner: "Победил {name} ({symbol}).",
+        yourTurn: "Ваш ход.",
+        playerTurn: "Ходит {name} ({symbol}).",
+        findingOpponent: "Ищем соперника...",
+        joinFailed: "Не удалось подключиться к игре. Попробуйте ещё раз.",
+        sendingMove: "Отправляем ход...",
+        moveFailed: "Не удалось сделать ход. Проверьте соединение.",
+        botWon: "Бот выиграл!",
+        chooseSide: "Выберите сторону и нажмите «Новая игра». Сейчас выбрано: {side}.",
+        randomly: "случайно",
+        botThinking: "Бот думает...",
+        yourBotTurn: "Ваш ход. Вы играете за {symbol}.",
+      },
+      en: {
+        pageTitle: "Tic-Tac-Toe",
+        subtitle: "Telegram Mini App. Play with the bot or a friend right inside Telegram.",
+        modeBot: "With bot",
+        modePvp: "With friend",
+        playX: "Play as ❎",
+        playO: "Play as ⭕",
+        random: "Random",
+        newGame: "New game",
+        close: "Close",
+        playerName: "Player",
+        appStatsTitle: "App stats",
+        statsBot: "With bot",
+        statsPvp: "With friend online",
+        games: "Games",
+        wins: "Wins",
+        losses: "Losses",
+        draws: "Draws",
+        winRate: "Win rate",
+        serverNotConfigured: "The friend game server is not configured.",
+        connecting: "Connecting to the game...",
+        pvpIntro: "Mode: online game with a friend. Tap “New game” to find an opponent.",
+        waitingOpponent: "Looking for an opponent...",
+        youPlayAs: "You play as {symbol}.",
+        draw: "Draw!",
+        youWon: "You won!",
+        winner: "{name} ({symbol}) won.",
+        yourTurn: "Your turn.",
+        playerTurn: "{name} ({symbol}) to move.",
+        findingOpponent: "Looking for an opponent...",
+        joinFailed: "Could not connect to the game. Try again.",
+        sendingMove: "Sending move...",
+        moveFailed: "Could not make the move. Check your connection.",
+        botWon: "Bot won!",
+        chooseSide: "Choose a side and tap “New game”. Current choice: {side}.",
+        randomly: "random",
+        botThinking: "Bot is thinking...",
+        yourBotTurn: "Your turn. You play as {symbol}.",
+      },
+    };
     const winLines = [
       [0, 1, 2],
       [3, 4, 5],
@@ -221,8 +302,11 @@
     let pvpPollTimer = null;
     let pvpLoading = false;
     let pvpMessage = "";
+    let currentLanguage = supportedLanguages.includes(localStorage.getItem("ticTacToeMiniAppLanguage"))
+      ? localStorage.getItem("ticTacToeMiniAppLanguage")
+      : (supportedLanguages.includes(telegramUser?.language_code?.slice(0, 2)) ? telegramUser.language_code.slice(0, 2) : "ru");
     let currentUserId = telegramUser?.id || Number(localStorage.getItem("ticTacToeMiniAppUserId"));
-    const currentUserName = telegramUser?.first_name || telegramUser?.username || "Игрок";
+    const currentUserName = telegramUser?.first_name || telegramUser?.username || t("playerName");
 
     const boardElement = document.querySelector("#board");
     const sidePickerElement = document.querySelector("#sidePicker");
@@ -234,10 +318,46 @@
       localStorage.setItem("ticTacToeMiniAppUserId", String(currentUserId));
     }
 
+    function t(key, params = {}) {
+      let value = translations[currentLanguage]?.[key] || translations.ru[key] || key;
+
+      Object.entries(params).forEach(([name, replacement]) => {
+        value = value.replaceAll(`{${name}}`, replacement);
+      });
+
+      return value;
+    }
+
+    function applyLanguage(language) {
+      if (!supportedLanguages.includes(language) || language === currentLanguage) {
+        return;
+      }
+
+      currentLanguage = language;
+      localStorage.setItem("ticTacToeMiniAppLanguage", language);
+      updateStaticTexts();
+      render();
+    }
+
+    function updateStaticTexts() {
+      document.documentElement.lang = currentLanguage;
+      document.title = t("pageTitle");
+      document.querySelector("h1").textContent = t("pageTitle");
+      document.querySelector(".subtitle").textContent = t("subtitle");
+      document.querySelector('[data-mode="bot"]').textContent = t("modeBot");
+      document.querySelector('[data-mode="pvp"]').textContent = t("modePvp");
+      document.querySelector('[data-side="X"]').textContent = t("playX");
+      document.querySelector('[data-side="O"]').textContent = t("playO");
+      document.querySelector('[data-side="random"]').textContent = t("random");
+      document.querySelector("#newGame").textContent = t("newGame");
+      document.querySelector("#closeApp").textContent = t("close");
+    }
+
     function emptyStats() {
       return {
         bot: { games: 0, wins: 0, losses: 0, draws: 0 },
         pvp: { games: 0, wins: 0, losses: 0, draws: 0 },
+        settings: { language: currentLanguage },
       };
     }
 
@@ -256,6 +376,10 @@
         if (parsed[modeName]) {
           Object.assign(normalized[modeName], parsed[modeName]);
         }
+      }
+
+      if (supportedLanguages.includes(parsed.settings?.language)) {
+        normalized.settings.language = parsed.settings.language;
       }
 
       return normalized;
@@ -277,6 +401,9 @@
         }
 
         const remoteStats = await response.json();
+        if (supportedLanguages.includes(remoteStats.settings?.language)) {
+          applyLanguage(remoteStats.settings.language);
+        }
         saveStats(remoteStats);
         renderStats();
       } catch (error) {
@@ -297,7 +424,11 @@
         });
 
         if (response.ok) {
-          saveStats(await response.json());
+          const remoteStats = await response.json();
+          if (supportedLanguages.includes(remoteStats.settings?.language)) {
+            applyLanguage(remoteStats.settings.language);
+          }
+          saveStats(remoteStats);
           renderStats();
         }
       } catch (error) {
@@ -319,19 +450,19 @@
       const pvpWinRate = current.pvp.games ? (current.pvp.wins / current.pvp.games * 100).toFixed(1) : "0.0";
 
       statsElement.textContent =
-        `Статистика приложения\n\n` +
-        `С ботом\n` +
-        `Игр: ${current.bot.games}\n` +
-        `Побед: ${current.bot.wins}\n` +
-        `Поражений: ${current.bot.losses}\n` +
-        `Ничьих: ${current.bot.draws}\n` +
-        `Процент побед: ${botWinRate}%\n\n` +
-        `С другом онлайн\n` +
-        `Игр: ${current.pvp.games}\n` +
-        `Побед: ${current.pvp.wins}\n` +
-        `Поражений: ${current.pvp.losses}\n` +
-        `Ничьих: ${current.pvp.draws}\n` +
-        `Процент побед: ${pvpWinRate}%`;
+        `${t("appStatsTitle")}\n\n` +
+        `${t("statsBot")}\n` +
+        `${t("games")}: ${current.bot.games}\n` +
+        `${t("wins")}: ${current.bot.wins}\n` +
+        `${t("losses")}: ${current.bot.losses}\n` +
+        `${t("draws")}: ${current.bot.draws}\n` +
+        `${t("winRate")}: ${botWinRate}%\n\n` +
+        `${t("statsPvp")}\n` +
+        `${t("games")}: ${current.pvp.games}\n` +
+        `${t("wins")}: ${current.pvp.wins}\n` +
+        `${t("losses")}: ${current.pvp.losses}\n` +
+        `${t("draws")}: ${current.pvp.draws}\n` +
+        `${t("winRate")}: ${pvpWinRate}%`;
     }
 
     function clearBotTimer() {
@@ -349,16 +480,16 @@
     }
 
     function pvpPlayerName(symbol) {
-      return pvpState?.players?.[symbol]?.name || `Игрок ${emoji[symbol]}`;
+      return pvpState?.players?.[symbol]?.name || `${t("playerName")} ${emoji[symbol]}`;
     }
 
     function pvpStatusText() {
       if (!apiBaseUrl) {
-        return "Сервер для игры с другом не настроен.";
+        return t("serverNotConfigured");
       }
 
       if (pvpLoading) {
-        return pvpMessage || "Подключаемся к игре...";
+        return pvpMessage || t("connecting");
       }
 
       if (pvpMessage) {
@@ -366,29 +497,31 @@
       }
 
       if (!pvpState) {
-        return "Режим: игра с другом онлайн. Нажмите «Новая игра», чтобы найти соперника.";
+        return t("pvpIntro");
       }
 
       if (pvpState.status === "waiting") {
-        const yourSymbol = pvpState.your_symbol ? ` Вы играете за ${emoji[pvpState.your_symbol]}.` : "";
-        return `Ищем соперника...${yourSymbol}`;
+        const yourSymbol = pvpState.your_symbol ? ` ${t("youPlayAs", { symbol: emoji[pvpState.your_symbol] })}` : "";
+        return `${t("waitingOpponent")}${yourSymbol}`;
       }
 
       if (pvpState.status === "finished") {
         if (pvpState.result === "draw") {
-          return "Ничья!";
+          return t("draw");
         }
 
         if (pvpState.result === pvpState.your_symbol) {
-          return "Вы выиграли!";
+          return t("youWon");
         }
 
-        return `Победил ${pvpPlayerName(pvpState.result)} (${emoji[pvpState.result]}).`;
+        return t("winner", { name: pvpPlayerName(pvpState.result), symbol: emoji[pvpState.result] });
       }
 
       const players = `${emoji.X}: ${pvpPlayerName("X")} · ${emoji.O}: ${pvpPlayerName("O")}`;
-      const turnText = pvpState.can_move ? "Ваш ход." : `Ходит ${pvpPlayerName(pvpState.turn)} (${emoji[pvpState.turn]}).`;
-      return `Вы играете за ${emoji[pvpState.your_symbol]}.\n${players}\n${turnText}`;
+      const turnText = pvpState.can_move
+        ? t("yourTurn")
+        : t("playerTurn", { name: pvpPlayerName(pvpState.turn), symbol: emoji[pvpState.turn] });
+      return `${t("youPlayAs", { symbol: emoji[pvpState.your_symbol] })}\n${players}\n${turnText}`;
     }
 
     function schedulePvpPoll() {
@@ -422,7 +555,7 @@
       pvpGameId = null;
       pvpState = null;
       pvpLoading = true;
-      pvpMessage = apiBaseUrl ? "Ищем соперника..." : "Сервер для игры с другом не настроен.";
+      pvpMessage = apiBaseUrl ? t("findingOpponent") : t("serverNotConfigured");
       board = Array(9).fill(empty);
       turn = "X";
       gameStarted = true;
@@ -451,7 +584,7 @@
       } catch (error) {
         console.error("Cannot join PvP game", error);
         pvpLoading = false;
-        pvpMessage = "Не удалось подключиться к игре. Попробуйте ещё раз.";
+        pvpMessage = t("joinFailed");
         render();
       }
     }
@@ -483,7 +616,7 @@
       }
 
       pvpLoading = true;
-      pvpMessage = "Отправляем ход...";
+      pvpMessage = t("sendingMove");
       renderStatus();
 
       try {
@@ -502,7 +635,7 @@
       } catch (error) {
         console.error("Cannot make PvP move", error);
         pvpLoading = false;
-        pvpMessage = "Не удалось сделать ход. Проверьте соединение.";
+        pvpMessage = t("moveFailed");
         render();
         schedulePvpPoll();
       }
@@ -579,13 +712,13 @@
       if (mode === "pvp") {
         return true;
       } else if (result === human) {
-        statusElement.textContent = "Вы выиграли!";
+        statusElement.textContent = t("youWon");
         updateBotStats("wins");
       } else if (result === bot) {
-        statusElement.textContent = "Бот выиграл!";
+        statusElement.textContent = t("botWon");
         updateBotStats("losses");
       } else {
-        statusElement.textContent = "Ничья!";
+        statusElement.textContent = t("draw");
         updateBotStats("draws");
       }
 
@@ -614,7 +747,9 @@
         if (mode === "pvp") {
           statusElement.textContent = pvpStatusText();
         } else {
-          statusElement.textContent = `Выберите сторону и нажмите «Новая игра». Сейчас выбрано: ${selectedSide === "random" ? "случайно" : emoji[selectedSide]}.`;
+          statusElement.textContent = t("chooseSide", {
+            side: selectedSide === "random" ? t("randomly") : emoji[selectedSide],
+          });
         }
         return;
       }
@@ -629,9 +764,9 @@
       }
 
       if (botThinking) {
-        statusElement.textContent = "Бот думает...";
+        statusElement.textContent = t("botThinking");
       } else {
-        statusElement.textContent = `Ваш ход. Вы играете за ${emoji[human]}.`;
+        statusElement.textContent = t("yourBotTurn", { symbol: emoji[human] });
       }
     }
 
@@ -775,6 +910,7 @@
       tg.expand();
     }
 
+    updateStaticTexts();
     selectMode("bot");
     selectSide("random");
     render();
