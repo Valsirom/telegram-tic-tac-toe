@@ -98,6 +98,16 @@
       transform: scale(0.98);
     }
 
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.65;
+    }
+
+    .cell:disabled {
+      cursor: default;
+      opacity: 1;
+    }
+
     .status {
       min-height: 50px;
       margin: 12px 0 16px;
@@ -182,7 +192,9 @@
     const emoji = { X: "❎", O: "⭕" };
     const mistakeChance = 0.30;
     const botMoveDelay = 800;
+    const pvpPollDelay = 1500;
     const apiBaseUrl = (window.TIC_TAC_TOE_CONFIG?.API_BASE_URL || "").replace(/\/$/, "");
+    const telegramUser = tg?.initDataUnsafe?.user;
     const winLines = [
       [0, 1, 2],
       [3, 4, 5],
@@ -204,7 +216,13 @@
     let finished = false;
     let botThinking = false;
     let botTimer = null;
-    let currentUserId = tg?.initDataUnsafe?.user?.id || Number(localStorage.getItem("ticTacToeMiniAppUserId"));
+    let pvpGameId = null;
+    let pvpState = null;
+    let pvpPollTimer = null;
+    let pvpLoading = false;
+    let pvpMessage = "";
+    let currentUserId = telegramUser?.id || Number(localStorage.getItem("ticTacToeMiniAppUserId"));
+    const currentUserName = telegramUser?.first_name || telegramUser?.username || "Игрок";
 
     const boardElement = document.querySelector("#board");
     const sidePickerElement = document.querySelector("#sidePicker");
@@ -295,25 +313,10 @@
       sendResult("bot", result);
     }
 
-    function updatePvpStats(result) {
-      const nextStats = stats();
-      nextStats.pvp.games += 1;
-
-      if (result === "X") {
-        nextStats.pvp.wins += 1;
-      } else if (result === "O") {
-        nextStats.pvp.losses += 1;
-      } else {
-        nextStats.pvp.draws += 1;
-      }
-
-      saveStats(nextStats);
-      sendResult("pvp", result === "X" ? "wins" : result === "O" ? "losses" : "draws");
-    }
-
     function renderStats() {
       const current = stats();
       const botWinRate = current.bot.games ? (current.bot.wins / current.bot.games * 100).toFixed(1) : "0.0";
+      const pvpWinRate = current.pvp.games ? (current.pvp.wins / current.pvp.games * 100).toFixed(1) : "0.0";
 
       statsElement.textContent =
         `Статистика приложения\n\n` +
@@ -323,17 +326,185 @@
         `Поражений: ${current.bot.losses}\n` +
         `Ничьих: ${current.bot.draws}\n` +
         `Процент побед: ${botWinRate}%\n\n` +
-        `С другом на одном устройстве\n` +
+        `С другом онлайн\n` +
         `Игр: ${current.pvp.games}\n` +
-        `Побед ${emoji.X}: ${current.pvp.wins}\n` +
-        `Побед ${emoji.O}: ${current.pvp.losses}\n` +
-        `Ничьих: ${current.pvp.draws}`;
+        `Побед: ${current.pvp.wins}\n` +
+        `Поражений: ${current.pvp.losses}\n` +
+        `Ничьих: ${current.pvp.draws}\n` +
+        `Процент побед: ${pvpWinRate}%`;
     }
 
     function clearBotTimer() {
       if (botTimer !== null) {
         clearTimeout(botTimer);
         botTimer = null;
+      }
+    }
+
+    function clearPvpPoll() {
+      if (pvpPollTimer !== null) {
+        clearTimeout(pvpPollTimer);
+        pvpPollTimer = null;
+      }
+    }
+
+    function pvpPlayerName(symbol) {
+      return pvpState?.players?.[symbol]?.name || `Игрок ${emoji[symbol]}`;
+    }
+
+    function pvpStatusText() {
+      if (!apiBaseUrl) {
+        return "Сервер для игры с другом не настроен.";
+      }
+
+      if (pvpLoading) {
+        return pvpMessage || "Подключаемся к игре...";
+      }
+
+      if (pvpMessage) {
+        return pvpMessage;
+      }
+
+      if (!pvpState) {
+        return "Режим: игра с другом онлайн. Нажмите «Новая игра», чтобы найти соперника.";
+      }
+
+      if (pvpState.status === "waiting") {
+        const yourSymbol = pvpState.your_symbol ? ` Вы играете за ${emoji[pvpState.your_symbol]}.` : "";
+        return `Ищем соперника...${yourSymbol}`;
+      }
+
+      if (pvpState.status === "finished") {
+        if (pvpState.result === "draw") {
+          return "Ничья!";
+        }
+
+        if (pvpState.result === pvpState.your_symbol) {
+          return "Вы выиграли!";
+        }
+
+        return `Победил ${pvpPlayerName(pvpState.result)} (${emoji[pvpState.result]}).`;
+      }
+
+      const players = `${emoji.X}: ${pvpPlayerName("X")} · ${emoji.O}: ${pvpPlayerName("O")}`;
+      const turnText = pvpState.can_move ? "Ваш ход." : `Ходит ${pvpPlayerName(pvpState.turn)} (${emoji[pvpState.turn]}).`;
+      return `Вы играете за ${emoji[pvpState.your_symbol]}.\n${players}\n${turnText}`;
+    }
+
+    function schedulePvpPoll() {
+      clearPvpPoll();
+
+      if (mode === "pvp" && pvpGameId && (!pvpState || pvpState.status !== "finished")) {
+        pvpPollTimer = setTimeout(pollPvpGame, pvpPollDelay);
+      }
+    }
+
+    function applyPvpState(nextState) {
+      const wasFinished = pvpState?.status === "finished";
+      pvpState = nextState;
+      pvpGameId = nextState.game_id;
+      board = nextState.board.slice();
+      turn = nextState.turn;
+      gameStarted = true;
+      finished = nextState.status === "finished";
+      pvpMessage = "";
+      render();
+
+      if (finished && !wasFinished) {
+        loadRemoteStats();
+      }
+
+      schedulePvpPoll();
+    }
+
+    async function startPvpGame() {
+      clearPvpPoll();
+      pvpGameId = null;
+      pvpState = null;
+      pvpLoading = true;
+      pvpMessage = apiBaseUrl ? "Ищем соперника..." : "Сервер для игры с другом не настроен.";
+      board = Array(9).fill(empty);
+      turn = "X";
+      gameStarted = true;
+      finished = false;
+      render();
+
+      if (!apiBaseUrl) {
+        pvpLoading = false;
+        renderStatus();
+        return;
+      }
+
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/pvp/join`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: currentUserId, name: currentUserName }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Join failed: ${response.status}`);
+        }
+
+        pvpLoading = false;
+        applyPvpState(await response.json());
+      } catch (error) {
+        console.error("Cannot join PvP game", error);
+        pvpLoading = false;
+        pvpMessage = "Не удалось подключиться к игре. Попробуйте ещё раз.";
+        render();
+      }
+    }
+
+    async function pollPvpGame() {
+      clearPvpPoll();
+
+      if (mode !== "pvp" || !pvpGameId || !apiBaseUrl) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/pvp/${pvpGameId}?user_id=${currentUserId}`);
+
+        if (response.ok) {
+          applyPvpState(await response.json());
+          return;
+        }
+      } catch (error) {
+        console.error("Cannot poll PvP game", error);
+      }
+
+      schedulePvpPoll();
+    }
+
+    async function makePvpMove(index) {
+      if (!pvpState || !pvpState.can_move || pvpLoading || board[index] !== empty) {
+        return;
+      }
+
+      pvpLoading = true;
+      pvpMessage = "Отправляем ход...";
+      renderStatus();
+
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/pvp/${pvpGameId}/move`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_id: currentUserId, index }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Move failed: ${response.status}`);
+        }
+
+        pvpLoading = false;
+        applyPvpState(await response.json());
+      } catch (error) {
+        console.error("Cannot make PvP move", error);
+        pvpLoading = false;
+        pvpMessage = "Не удалось сделать ход. Проверьте соединение.";
+        render();
+        schedulePvpPoll();
       }
     }
 
@@ -406,13 +577,7 @@
       finished = true;
 
       if (mode === "pvp") {
-        if (result === "draw") {
-          statusElement.textContent = "Ничья!";
-          updatePvpStats("draw");
-        } else {
-          statusElement.textContent = `Победил ${emoji[result]}!`;
-          updatePvpStats(result);
-        }
+        return true;
       } else if (result === human) {
         statusElement.textContent = "Вы выиграли!";
         updateBotStats("wins");
@@ -436,6 +601,9 @@
         button.type = "button";
         button.className = "cell";
         button.textContent = emoji[cell] || cell;
+        button.disabled = mode === "pvp"
+          ? !pvpState?.can_move || cell !== empty
+          : !gameStarted || finished || botThinking || cell !== empty;
         button.addEventListener("click", () => makeMove(index));
         boardElement.appendChild(button);
       });
@@ -444,10 +612,15 @@
     function renderStatus() {
       if (!gameStarted) {
         if (mode === "pvp") {
-          statusElement.textContent = "Режим: игра с другом. Нажмите «Новая игра».";
+          statusElement.textContent = pvpStatusText();
         } else {
           statusElement.textContent = `Выберите сторону и нажмите «Новая игра». Сейчас выбрано: ${selectedSide === "random" ? "случайно" : emoji[selectedSide]}.`;
         }
+        return;
+      }
+
+      if (mode === "pvp") {
+        statusElement.textContent = pvpStatusText();
         return;
       }
 
@@ -455,9 +628,7 @@
         return;
       }
 
-      if (mode === "pvp") {
-        statusElement.textContent = `Ходит ${emoji[turn]}.`;
-      } else if (botThinking) {
+      if (botThinking) {
         statusElement.textContent = "Бот думает...";
       } else {
         statusElement.textContent = `Ваш ход. Вы играете за ${emoji[human]}.`;
@@ -471,21 +642,12 @@
     }
 
     function makeMove(index) {
-      if (!gameStarted || finished || botThinking || board[index] !== empty) {
+      if (mode === "pvp") {
+        makePvpMove(index);
         return;
       }
 
-      if (mode === "pvp") {
-        board[index] = turn;
-        renderBoard();
-
-        if (finishIfNeeded()) {
-          renderBoard();
-          return;
-        }
-
-        turn = turn === "X" ? "O" : "X";
-        render();
+      if (!gameStarted || finished || botThinking || board[index] !== empty) {
         return;
       }
 
@@ -519,11 +681,18 @@
 
     function startGame() {
       clearBotTimer();
+      clearPvpPoll();
       board = Array(9).fill(empty);
       turn = "X";
       gameStarted = true;
       finished = false;
       botThinking = false;
+      pvpMessage = "";
+
+      if (mode === "pvp") {
+        startPvpGame();
+        return;
+      }
 
       if (mode === "bot") {
         human = selectedSide === "random" ? (Math.random() < 0.5 ? "X" : "O") : selectedSide;
@@ -556,12 +725,17 @@
 
     function selectMode(nextMode) {
       clearBotTimer();
+      clearPvpPoll();
       mode = nextMode;
       board = Array(9).fill(empty);
       gameStarted = false;
       finished = false;
       botThinking = false;
       turn = "X";
+      pvpGameId = null;
+      pvpState = null;
+      pvpLoading = false;
+      pvpMessage = "";
       sidePickerElement.style.display = mode === "bot" ? "grid" : "none";
 
       document.querySelectorAll("[data-mode]").forEach((button) => {

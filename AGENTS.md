@@ -97,7 +97,8 @@ The main dependency is `python-telegram-bot`.
   - opens from bot button `Открыть приложение`
   - requires HTTPS URL in `TELEGRAM_WEBAPP_URL`
   - command `/app` sends Mini App open button
-  - supports game with bot and local game with friend on one device
+  - supports game with bot and online game with friend on separate devices
+  - Mini App online PvP uses backend matchmaking and polling API
   - in Mini App the game starts only after pressing `Новая игра`
   - Mini App bot moves are delayed by `botMoveDelay`
   - Mini App can be hosted on GitHub Pages and configured through `webapp/config.js`
@@ -130,6 +131,7 @@ The main dependency is `python-telegram-bot`.
   - Koyeb can also run the same command if available
   - backend serves Telegram webhook at `/webhook`
   - backend serves stats API at `/api/stats/{user_id}`
+  - backend serves Mini App online PvP API at `/api/pvp/*`
   - GitHub Pages serves the Mini App from `docs/`
   - Supabase stores shared stats in `public.user_stats`
 

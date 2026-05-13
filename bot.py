@@ -2,8 +2,10 @@ import asyncio
 import json
 import os
 import random
+import time
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import uuid4
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -25,6 +27,7 @@ EMPTY = "·"
 SYMBOL_EMOJI = {"X": "❎", "O": "⭕"}
 BOT_MISTAKE_CHANCE = 0.30
 BOT_MOVE_DELAY_SECONDS = 0.8
+WEBAPP_PVP_GAME_TTL_SECONDS = 6 * 60 * 60
 STATS_FILE = Path(__file__).with_name("stats.json")
 WEBAPP_FILE = Path(__file__).with_name("webapp") / "index.html"
 WIN_LINES = (
@@ -66,8 +69,25 @@ class WaitingPlayer:
     name: str
 
 
+@dataclass
+class WebAppPvpGame:
+    game_id: str
+    board: list[str]
+    player_x_id: int | None = None
+    player_o_id: int | None = None
+    player_x_name: str = "Игрок ❎"
+    player_o_name: str = "Игрок ⭕"
+    turn: str = "X"
+    finished: bool = False
+    result_recorded: bool = False
+    created_at: float = 0.0
+    updated_at: float = 0.0
+
+
 games: dict[int, Game] = {}
 waiting_players: dict[int, WaitingPlayer] = {}
+webapp_pvp_games: dict[str, WebAppPvpGame] = {}
+webapp_waiting_games: dict[int, str] = {}
 stats: dict[str, dict[str, dict[str, int]]] = {}
 telegram_application: Application | None = None
 app = FastAPI(title="Telegram Tic-Tac-Toe Bot")
@@ -407,6 +427,157 @@ def display_name(update: Update) -> str:
 
 def remove_user_from_waiting(user_id: int) -> None:
     waiting_players.pop(user_id, None)
+
+
+def remove_webapp_user_from_waiting(user_id: int) -> None:
+    webapp_waiting_games.pop(user_id, None)
+
+
+def webapp_pvp_has_two_players(game: WebAppPvpGame) -> bool:
+    return game.player_x_id is not None and game.player_o_id is not None
+
+
+def webapp_player_symbol(game: WebAppPvpGame, user_id: int) -> str | None:
+    if user_id == game.player_x_id:
+        return "X"
+    if user_id == game.player_o_id:
+        return "O"
+    return None
+
+
+def cleanup_webapp_pvp_games() -> None:
+    now = time.time()
+    stale_game_ids = [
+        game_id
+        for game_id, game in webapp_pvp_games.items()
+        if now - game.updated_at > WEBAPP_PVP_GAME_TTL_SECONDS
+    ]
+
+    for game_id in stale_game_ids:
+        webapp_pvp_games.pop(game_id, None)
+
+    for user_id, game_id in list(webapp_waiting_games.items()):
+        if game_id not in webapp_pvp_games:
+            webapp_waiting_games.pop(user_id, None)
+
+
+def parse_api_user_id(data: dict) -> int:
+    try:
+        user_id = int(data.get("user_id"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+
+    if user_id <= 0:
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+
+    return user_id
+
+
+def parse_api_user_name(data: dict) -> str:
+    name = data.get("name")
+
+    if not isinstance(name, str):
+        return "Игрок"
+
+    name = name.strip()
+    return name[:40] if name else "Игрок"
+
+
+def webapp_pvp_state(game: WebAppPvpGame, user_id: int) -> dict:
+    result = check_winner(game.board)
+    symbol = webapp_player_symbol(game, user_id)
+
+    if not webapp_pvp_has_two_players(game):
+        status = "waiting"
+    elif result is None:
+        status = "playing"
+    else:
+        status = "finished"
+
+    return {
+        "game_id": game.game_id,
+        "status": status,
+        "board": game.board,
+        "turn": game.turn,
+        "result": result,
+        "your_symbol": symbol,
+        "can_move": status == "playing" and symbol == game.turn,
+        "players": {
+            "X": {"id": game.player_x_id, "name": game.player_x_name},
+            "O": {"id": game.player_o_id, "name": game.player_o_name},
+        },
+    }
+
+
+async def record_webapp_pvp_result(game: WebAppPvpGame) -> None:
+    result = check_winner(game.board)
+
+    if result is None or game.result_recorded:
+        return
+
+    game.finished = True
+    game.result_recorded = True
+
+    if result == "draw":
+        for player_id in (game.player_x_id, game.player_o_id):
+            if player_id is not None:
+                await async_add_user_result(player_id, "pvp", "draws")
+    else:
+        winner_id = game.player_x_id if result == "X" else game.player_o_id
+        loser_id = game.player_o_id if result == "X" else game.player_x_id
+        if winner_id is not None:
+            await async_add_user_result(winner_id, "pvp", "wins")
+        if loser_id is not None:
+            await async_add_user_result(loser_id, "pvp", "losses")
+
+
+def make_webapp_pvp_game(user_id: int, name: str) -> WebAppPvpGame:
+    now = time.time()
+    game = WebAppPvpGame(game_id=uuid4().hex, board=[EMPTY] * 9, created_at=now, updated_at=now)
+    symbol = random.choice(["X", "O"])
+
+    if symbol == "X":
+        game.player_x_id = user_id
+        game.player_x_name = name
+    else:
+        game.player_o_id = user_id
+        game.player_o_name = name
+
+    return game
+
+
+def join_webapp_pvp_game(user_id: int, name: str) -> WebAppPvpGame:
+    cleanup_webapp_pvp_games()
+    remove_webapp_user_from_waiting(user_id)
+
+    candidates = []
+    for opponent_id, game_id in list(webapp_waiting_games.items()):
+        if opponent_id == user_id:
+            continue
+
+        game = webapp_pvp_games.get(game_id)
+        if game is None or webapp_pvp_has_two_players(game):
+            webapp_waiting_games.pop(opponent_id, None)
+            continue
+
+        candidates.append((opponent_id, game))
+
+    if candidates:
+        opponent_id, game = random.choice(candidates)
+        webapp_waiting_games.pop(opponent_id, None)
+        if game.player_x_id is None:
+            game.player_x_id = user_id
+            game.player_x_name = name
+        else:
+            game.player_o_id = user_id
+            game.player_o_name = name
+        game.updated_at = time.time()
+        return game
+
+    game = make_webapp_pvp_game(user_id, name)
+    webapp_pvp_games[game.game_id] = game
+    webapp_waiting_games[user_id] = game.game_id
+    return game
 
 
 def make_bot_game(human: str, user_id: int, user_name: str) -> Game:
@@ -892,6 +1063,75 @@ async def api_add_result(user_id: int, request: Request) -> dict[str, dict[str, 
 
     await async_add_user_result(user_id, mode, result)
     return await get_stats_for_api(user_id)
+
+
+@app.post("/api/pvp/join")
+async def api_pvp_join(request: Request) -> dict:
+    data = await request.json()
+    user_id = parse_api_user_id(data)
+    name = parse_api_user_name(data)
+    game = join_webapp_pvp_game(user_id, name)
+    return webapp_pvp_state(game, user_id)
+
+
+@app.get("/api/pvp/{game_id}")
+async def api_pvp_get_game(game_id: str, user_id: int) -> dict:
+    game = webapp_pvp_games.get(game_id)
+
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    if webapp_player_symbol(game, user_id) is None:
+        raise HTTPException(status_code=403, detail="This is not your game")
+
+    game.updated_at = time.time()
+    return webapp_pvp_state(game, user_id)
+
+
+@app.post("/api/pvp/{game_id}/move")
+async def api_pvp_move(game_id: str, request: Request) -> dict:
+    game = webapp_pvp_games.get(game_id)
+
+    if game is None:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    data = await request.json()
+    user_id = parse_api_user_id(data)
+    symbol = webapp_player_symbol(game, user_id)
+
+    if symbol is None:
+        raise HTTPException(status_code=403, detail="This is not your game")
+
+    if not webapp_pvp_has_two_players(game):
+        raise HTTPException(status_code=400, detail="Waiting for opponent")
+
+    if check_winner(game.board) is not None:
+        await record_webapp_pvp_result(game)
+        return webapp_pvp_state(game, user_id)
+
+    if symbol != game.turn:
+        raise HTTPException(status_code=400, detail="It is not your turn")
+
+    try:
+        index = int(data.get("index"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid index")
+
+    if index < 0 or index >= len(game.board):
+        raise HTTPException(status_code=400, detail="Invalid index")
+
+    if game.board[index] != EMPTY:
+        raise HTTPException(status_code=400, detail="Cell is occupied")
+
+    game.board[index] = symbol
+    game.updated_at = time.time()
+
+    if check_winner(game.board) is None:
+        game.turn = "O" if game.turn == "X" else "X"
+    else:
+        await record_webapp_pvp_result(game)
+
+    return webapp_pvp_state(game, user_id)
 
 
 if __name__ == "__main__":
